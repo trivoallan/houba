@@ -10,6 +10,14 @@ knock and `regis` (which carries the removed EOL feature) are sibling tools shar
 
 Current maturity: the full hexagon is delivered (released 0.3.0, plus merged PRs #24–#32). The use-case layer (`knock/use_cases/` — `loader`, the `reconcile_policies` orchestrator, `report`, and the `audit` coverage walk), **both** the copy path and the rebuild / derive-and-stamp path, the pluggable transform engine (`knock/domain/transforms/`), and the OCI-standard + `io.knock.*` provenance stamp (`knock/domain/stamp.py`) are all built. `knock attach` ingests upstream scan reports as signed OCI referrers and, with `--fail-on <severity>`, doubles as a CI gate (the first enforcement lever): it exits 1 when the scan has any finding at or above the threshold (`critical > high > medium > low > unknown`), else 0 — observational by default. The roadmap's remaining items are refinements (e.g. freezing the provenance schema, a coverage audit), not missing foundations.
 
+CLI verbs today: `reconcile · purge · attach · audit · gc · verify · scan · version`. Two deserve
+naming here: **`knock verify <ref> --require scan-pass --max-severity --max-age` is the *decision*
+verb** — read-only, it evaluates the facts `attach`/`reconcile` already placed on a digest (signed
+scan attestation, stamp, SBOM referrer) and returns one exit-0/1 verdict, which is what makes knock
+the thing a promotion gate asks rather than only the thing that stamps. `knock scan` is a sub-typer
+(`reserve` / `attach` / `enqueue` / `reaper`) driving the optional Redis-Streams scan pipeline,
+behind the `knock-oci[scan]` extra.
+
 ## Commands
 
 Everything runs through `uv` (the project manager — non-negotiable, no pip/poetry fallback).

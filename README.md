@@ -207,8 +207,10 @@ knock/
 │                usage_oracle, reporter, clock
 ├── adapters/    concrete I/O — regctl_cli, buildkit_cli, cosign_cli, command_usage,
 │                structlog_reporter, system_clock
-├── use_cases/   orchestration — loader, reconcile, purge, attach, audit, gc, report
-└── cli/         Typer entry points — reconcile, purge, attach, audit, gc, version
+├── use_cases/   orchestration — loader, reconcile, purge, attach, audit, gc, verify,
+│                scan_worker, report
+└── cli/         Typer entry points — reconcile, purge, attach, audit, gc, verify, scan,
+                 version
 ```
 
 **Golden rules**

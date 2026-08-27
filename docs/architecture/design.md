@@ -42,8 +42,8 @@ integration-testable in isolation.
 
 ```mermaid
 flowchart TD
-    cli["<b>cli/</b> — Typer, thin<br/>reconcile · purge · attach · audit · gc · version · render · _di (composition root)"]
-    uc["<b>use_cases/</b><br/>loader · reconcile (orchestrator) · purge · attach · audit · gc · report (RunReport)<br/><i>receive ports by keyword injection — never import adapters</i>"]
+    cli["<b>cli/</b> — Typer, thin<br/>reconcile · purge · attach · audit · gc · verify · scan · version · render · _di (composition root)"]
+    uc["<b>use_cases/</b><br/>loader · reconcile (orchestrator) · purge · attach · audit · gc · verify · scan_worker · report (RunReport)<br/><i>receive ports by keyword injection — never import adapters</i>"]
     domain["<b>domain/</b> — pure<br/>mirror_policy · selection · aliases · semver · expand · policy_merge · variants<br/>reconcile · collision · sharding · stamp · attestation · coverage · lifecycle · retention · purge · sbom · scan/* · transforms/*"]
     ports["<b>ports/</b> — typing.Protocol<br/>RegistryPort · ImageBuilderPort · AttestorPort · SbomGeneratorPort · UsageOraclePort · Reporter · ClockPort"]
     adapters["<b>adapters/</b><br/>RegctlAdapter · BuildkitAdapter · CosignAdapter · SyftAdapter · CommandUsageAdapter · StructlogReporter · SystemClock"]
