@@ -120,6 +120,28 @@ def test_annotate_emits_one_flag_per_annotation(
     # annotate returns the resulting (post-mod) manifest digest, read back via `image digest`
     assert result == "sha256:abc123"
     assert "image digest harbor.corp/lib/redis:7.2.0" in line
+    assert "--replace" in line  # no publish_as → rewrite the tag in place
+
+
+def test_annotate_publishes_to_another_ref_when_input_is_pinned(
+    fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A digest-pinned input has no tag for --replace to rewrite, so the annotated result
+    # is published to the destination tag with --create. This is what lets the copy path
+    # stamp the digest it placed instead of re-resolving a tag a concurrent writer can move.
+    log = _log(tmp_path, monkeypatch)
+    result = RegctlAdapter().annotate(
+        "harbor.corp/lib/redis@sha256:src",
+        {"io.knock.policy": "redis"},
+        publish_as="harbor.corp/lib/redis:7.2.0",
+    )
+    line = log.read_text()
+    pinned = "harbor.corp/lib/redis@sha256:src"
+    assert f"image mod {pinned} --create harbor.corp/lib/redis:7.2.0" in line
+    assert "--replace" not in line
+    # the digest is read back from the published tag, not from the pinned input
+    assert "image digest harbor.corp/lib/redis:7.2.0" in line
+    assert result == "sha256:abc123"
 
 
 def test_delete_tag_invokes_tag_rm(

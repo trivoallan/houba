@@ -75,10 +75,13 @@ class FakeRegistryPort:
             raise RegctlError(f"fake copy failure for {dst_ref}")
         self.copied.append((src_ref, dst_ref))
 
-    def annotate(self, image_ref: str, annotations: dict[str, str]) -> str:
+    def annotate(
+        self, image_ref: str, annotations: dict[str, str], *, publish_as: str | None = None
+    ) -> str:
         self.annotated.append((image_ref, annotations))
-        # deterministic synthetic post-annotate digest (distinct per ref)
-        return f"sha256:{hashlib.sha256(image_ref.encode()).hexdigest()}"
+        # deterministic synthetic post-annotate digest (distinct per ref); keyed on the
+        # published ref because that is what the adapter reads the digest back from.
+        return f"sha256:{hashlib.sha256((publish_as or image_ref).encode()).hexdigest()}"
 
     def delete_tag(self, image_ref: str) -> None:
         if image_ref in self._fail_delete:
