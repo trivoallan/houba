@@ -483,22 +483,35 @@ def _apply_plan(
         steps = [s.name for s in w.vplan.transform] or None  # applied steps; None on a copy
         try:
             out_digest: str | None = None
+            dest_ref = f"{plan.dest_repo}:{w.out_tag}"
             if not dry_run_tags:
                 if w.vplan.transform:
                     _build_variant(
                         builder=builder,
                         source_ref=f"{src_repo}@{source[w.src_tag].digest}",
-                        dest_ref=f"{plan.dest_repo}:{w.out_tag}",
+                        dest_ref=dest_ref,
                         resolved=plan.transforms[w.vplan.name],
                         platform=build_platform,
                         work_dir=work_dir,
                         provenance=attestor is not None,
                         tls_verify=plan.config.tls_verify,
                     )
+                    # buildkit's output digest is not known until the tag is resolved, so
+                    # the rebuild path stamps in place.
+                    stamp_ref, publish_as = dest_ref, None
                 else:
-                    registry.copy(f"{src_repo}:{w.src_tag}", f"{plan.dest_repo}:{w.out_tag}")
+                    # Digest-pinned like the rebuild path above: copying by tag would let an
+                    # upstream retag between plan and apply place bytes the stamp below does
+                    # not describe. The destination ref keeps the tag, so the copy applies it.
+                    registry.copy(f"{src_repo}@{source[w.src_tag].digest}", dest_ref)
+                    # A plain copy transfers the manifest byte-for-byte, so the placed digest
+                    # IS the source digest. Stamp that pinned ref and publish the result to
+                    # the tag, rather than re-resolving a tag a concurrent writer could move
+                    # between the copy and the stamp.
+                    stamp_ref = f"{plan.dest_repo}@{source[w.src_tag].digest}"
+                    publish_as = dest_ref
                 out_digest = registry.annotate(
-                    f"{plan.dest_repo}:{w.out_tag}",
+                    stamp_ref,
                     build_stamp_annotations(
                         prefix=label_prefix,
                         source_registry=plan.policy.spec.source.registry,
@@ -516,6 +529,7 @@ def _apply_plan(
                         transform_steps=steps,
                         transform_version_value=transform_versions.get(w.vplan.name),
                     ),
+                    publish_as=publish_as,
                 )
                 # SBOM (both paths): scan the placed digest, attach one referrer per
                 # configured format. Inside the try => a generation/attach failure fails

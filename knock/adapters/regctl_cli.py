@@ -90,13 +90,19 @@ class RegctlAdapter:
     def copy(self, src_ref: str, dst_ref: str) -> None:
         self._run(["image", "copy", src_ref, dst_ref])
 
-    def annotate(self, image_ref: str, annotations: dict[str, str]) -> str:
-        args = ["image", "mod", image_ref, "--replace"]
+    def annotate(
+        self, image_ref: str, annotations: dict[str, str], *, publish_as: str | None = None
+    ) -> str:
+        args = ["image", "mod", image_ref]
+        # --create publishes the annotated result at another ref, so image_ref can be
+        # digest-pinned; --replace rewrites the tag in place when the caller has no digest.
+        args += ["--create", publish_as] if publish_as else ["--replace"]
         for key, value in annotations.items():
             args += ["--annotation", f"{key}={value}"]
         self._run(args)
-        # `image mod --replace` rewrites the tag; read back the resulting manifest digest.
-        return self._run(["image", "digest", image_ref]).strip()
+        # `image mod` prints the resulting reference, never a digest (and has no --format),
+        # so the post-annotate digest still has to be read back from the published ref.
+        return self._run(["image", "digest", publish_as or image_ref]).strip()
 
     def delete_tag(self, image_ref: str) -> None:
         self._run(["tag", "rm", image_ref])

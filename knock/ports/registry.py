@@ -39,8 +39,15 @@ class RegistryPort(Protocol):
         ...
 
     def copy(self, src_ref: str, dst_ref: str) -> None: ...
-    def annotate(self, image_ref: str, annotations: dict[str, str]) -> str:
-        """Apply annotations in place; return the resulting (post-annotate) manifest digest."""
+    def annotate(
+        self, image_ref: str, annotations: dict[str, str], *, publish_as: str | None = None
+    ) -> str:
+        """Annotate image_ref; publish the result to publish_as (default: in place).
+
+        Returns the resulting (post-annotate) manifest digest. A caller that already knows
+        the digest it placed should pass a digest-pinned image_ref plus the tag to publish,
+        so the stamp cannot land on bytes a concurrent writer moved the tag to.
+        """
         ...
 
     def delete_tag(self, image_ref: str) -> None: ...
