@@ -167,8 +167,8 @@ def test_reconcile_copies_new_tags_and_stamps() -> None:
     report = _run([POLICY], registry=fake)
     assert isinstance(report, RunReport)
     assert fake.logins == [("harbor.corp", "robot", True)]
-    assert ("docker.io/library/redis:7.2.0", "harbor.corp/lib/redis:7.2.0") in fake.copied
-    assert ("docker.io/library/redis:7.3.0", "harbor.corp/lib/redis:7.3.0") in fake.copied
+    assert ("docker.io/library/redis@sha256:a", "harbor.corp/lib/redis:7.2.0") in fake.copied
+    assert ("docker.io/library/redis@sha256:b", "harbor.corp/lib/redis:7.3.0") in fake.copied
     stamped = {ref: ann for ref, ann in fake.annotated}
     base_digest = stamped["harbor.corp/lib/redis:7.2.0"]["org.opencontainers.image.base.digest"]
     assert base_digest == "sha256:a"
@@ -181,6 +181,22 @@ def test_reconcile_copies_new_tags_and_stamps() -> None:
     )
     assert ("harbor.corp/lib/redis:7.3.0", "harbor.corp/lib/redis:latest") in fake.copied
     assert report.totals.imported == 2
+
+
+def test_copy_path_pins_the_source_digest_it_stamps() -> None:
+    # TOCTOU: copying by tag lets upstream retag between the plan and the apply, so knock
+    # places bytes A while stamping base.digest = B — the stamp then describes a different
+    # artifact than the one placed. Pin the copy to the digest resolved during planning
+    # (as the rebuild path already does) so placed bytes and stamp are the same artifact.
+    fake = FakeRegistryPort(
+        tags={"docker.io/library/redis": ["7.2.0"], "harbor.corp/lib/redis": []},
+        infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
+    )
+    _run([POLICY], registry=fake)
+    dst = "harbor.corp/lib/redis:7.2.0"
+    src_ref = next(s for s, d in fake.copied if d == dst)
+    stamped_digest = dict(fake.annotated)[dst]["org.opencontainers.image.base.digest"]
+    assert src_ref == f"docker.io/library/redis@{stamped_digest}"
 
 
 def test_reconcile_dry_run_tags_skips_mutations() -> None:
@@ -250,7 +266,7 @@ def test_reconcile_updates_changed_stable_tag() -> None:
     )
     report = _run([POLICY], registry=fake)
     assert report.totals.updated == 1
-    assert ("docker.io/library/redis:7.2.0", "harbor.corp/lib/redis:7.2.0") in fake.copied
+    assert ("docker.io/library/redis@sha256:NEW", "harbor.corp/lib/redis:7.2.0") in fake.copied
     stamped = {ref: ann for ref, ann in fake.annotated}
     assert (
         stamped["harbor.corp/lib/redis:7.2.0"]["org.opencontainers.image.base.digest"]
@@ -273,7 +289,7 @@ def test_reconcile_idempotent_when_unchanged() -> None:
     assert report.totals.imported == 0
     assert report.totals.updated == 0
     # No cross-registry copy (source→mirror): the tag is up-to-date; idempotent.
-    assert ("docker.io/library/redis:7.2.0", "harbor.corp/lib/redis:7.2.0") not in fake.copied
+    assert [s for s, _ in fake.copied if s.startswith("docker.io/")] == []
 
 
 def test_reconcile_deletes_orphan_stamped_tag() -> None:
@@ -692,7 +708,7 @@ def test_reconcile_collects_partial_tag_failure() -> None:
     assert policy.status == "partial"
     assert policy.totals.imported == 1
     assert policy.totals.failed == 1
-    assert ("docker.io/library/redis:7.2.0", "harbor.corp/lib/redis:7.2.0") in fake.copied
+    assert ("docker.io/library/redis@sha256:a", "harbor.corp/lib/redis:7.2.0") in fake.copied
     ops = [op for t in policy.targets for v in t.variants for op in v.operations]
     failed = [op for op in ops if op.error is not None]
     assert [op.out_tag for op in failed] == ["7.3.0"]

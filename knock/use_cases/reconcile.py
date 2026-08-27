@@ -496,7 +496,13 @@ def _apply_plan(
                         tls_verify=plan.config.tls_verify,
                     )
                 else:
-                    registry.copy(f"{src_repo}:{w.src_tag}", f"{plan.dest_repo}:{w.out_tag}")
+                    # Digest-pinned like the rebuild path above: copying by tag would let an
+                    # upstream retag between plan and apply place bytes the stamp below does
+                    # not describe. The destination ref keeps the tag, so the copy applies it.
+                    registry.copy(
+                        f"{src_repo}@{source[w.src_tag].digest}",
+                        f"{plan.dest_repo}:{w.out_tag}",
+                    )
                 out_digest = registry.annotate(
                     f"{plan.dest_repo}:{w.out_tag}",
                     build_stamp_annotations(
