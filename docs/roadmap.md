@@ -60,7 +60,7 @@ concurrency**, **cross-pod sharding**, **KEDA-driven buildkit autoscaling**, deb
 cosign v3 signing-config, and a **single Argo reference deployment that is the demo** — one
 App-of-Apps replaces the prior multi-overlay demo sprawl, so the demo *is* the adoptable blueprint
 (six entry points → two; thesis-minimum operators, autoscaling an optional add-on). CLI verbs today:
-`reconcile · purge · attach · audit · version · gc`.
+`reconcile · purge · attach · audit · gc · verify · scan · version`.
 
 ## Delivered — the mandate, made real (the former *Now*)
 
