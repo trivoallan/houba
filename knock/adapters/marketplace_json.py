@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from knock.errors import AdapterError, DomainError
+from knock.errors import AdapterError, DomainError, InternalError
 
 # No `^`/`$` anchors: the pattern is only ever used with `fullmatch`, which anchors on its
 # own. Anchoring here too would make `.fullmatch(...)` look interchangeable with the
@@ -152,9 +152,13 @@ def build_marketplace(
     `TypeError` instead of silently publishing an unguarded first catalog. Pass `0`
     explicitly for a genuine first publish, or `None` when the previous count could not be
     determined — `None` disables the guard, so `allow_drop` is meaningless without a
-    `previous_count` to allow a drop against, and raises `ValueError` rather than being
+    `previous_count` to allow a drop against, and raises `InternalError` rather than being
     silently ignored: this is a call-shape mistake, not a policy refusal a caller can
-    confirm away, so it must not be catchable as `ManifestDropError`.
+    confirm away, so it must not be catchable as `ManifestDropError`. `InternalError`
+    (exit 4, "bug") is a `KnockError`, so `cli/main.py`'s `except KnockError` catches and
+    maps it cleanly; a bare `ValueError` is not a `KnockError` and would instead escape as
+    an unhandled exception (traceback, exit 1) — the wrong exit code for a fault the
+    operator cannot act on.
 
     Limit: the guard compares counts, not identities, so it cannot see substitution. If a
     skill loses its gating verdict in the same run a different skill is newly added,
@@ -165,7 +169,7 @@ def build_marketplace(
     speculatively belongs with the use case that will actually call this function.
     """
     if allow_drop and previous_count is None:
-        raise ValueError(
+        raise InternalError(
             "allow_drop has no effect without previous_count; pass previous_count "
             "explicitly (0 for a first publish) or drop allow_drop"
         )

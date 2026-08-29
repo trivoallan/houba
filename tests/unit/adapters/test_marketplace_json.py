@@ -14,7 +14,7 @@ from knock.adapters.marketplace_json import (
     PublishedSkill,
     build_marketplace,
 )
-from knock.errors import exit_code_for
+from knock.errors import InternalError, exit_code_for
 
 
 def skill(name: str = "probe", digest: str = "sha256:" + "a" * 64) -> PublishedSkill:
@@ -92,12 +92,18 @@ def test_a_drop_is_allowed_when_explicitly_confirmed() -> None:
 
 def test_allow_drop_without_previous_count_is_rejected() -> None:
     # This is a call-shape mistake, not a policy refusal the operator can confirm away, so
-    # it must not be catchable as ManifestDropError — a plain ValueError falls through
-    # exit_code_for to InternalError (exit 4, "bug"), which is the right classification.
-    with pytest.raises(ValueError, match="previous_count"):
+    # it must not be catchable as ManifestDropError. InternalError (exit 4, "bug") is a
+    # KnockError, so cli/main.py's `except KnockError` catches and maps it cleanly; a bare
+    # ValueError is not a KnockError and would instead escape as an unhandled exception
+    # (traceback, exit 1) — the wrong code for a fault the operator cannot act on.
+    with pytest.raises(InternalError, match="previous_count"):
         build_marketplace(
             "internal", "Platform Team", [skill()], previous_count=None, allow_drop=True
         )
+
+
+def test_allow_drop_misuse_exits_as_an_internal_error() -> None:
+    assert exit_code_for(InternalError("x")) == 4
 
 
 def test_growth_needs_no_confirmation() -> None:
