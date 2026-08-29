@@ -26,6 +26,7 @@ class RegistryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     host: str = Field(
+        min_length=1,
         description="Registry host, optionally with a path-prefix namespace — "
         "`harbor.example.com`, `localhost:5001`, or `ghcr.io/acme`. Image references "
         "compose from the whole value; regctl's registry-level operations (login, TLS "
@@ -56,20 +57,33 @@ class RegistryConfig(BaseModel):
         "(policy ← destination ← global).",
     )
 
+    # `min_length=1` on the field is as far as the declarative contract goes here. The rest
+    # stays imperative on purpose: one pattern would have to accept `localhost:5000`,
+    # `harbor.corp:443`, an IPv6 literal (`[::1]:5000`) and multi-segment prefixes alike, and
+    # such a regex fails on the case nobody thought of. The published JSON schema therefore
+    # carries these rules as prose only — a decision, not an oversight.
+    @field_validator("host")
+    @classmethod
+    def _host_has_no_scheme_or_slashes(cls, v: str) -> str:
+        if "://" in v:
+            raise ValueError("registry host must not carry a scheme (got a URL)")
+        if v.endswith("/"):
+            raise ValueError("registry host must not end with '/'")
+        if v.startswith("/"):
+            raise ValueError("registry host must not start with '/'")
+        if not v.strip():
+            raise ValueError("registry host must not be empty")
+        if any(c.isspace() for c in v):
+            raise ValueError("registry host must not contain whitespace")
+        if any(not segment for segment in v.split("/")):
+            raise ValueError("registry host must not contain an empty path segment")
+        return v
+
     @model_validator(mode="after")
     def _credentials_both_or_neither(self) -> RegistryConfig:
         if (self.username is None) != (self.password is None):
             raise ValueError("registry username and password must be set together")
         return self
-
-    @field_validator("host")
-    @classmethod
-    def _host_is_bare(cls, v: str) -> str:
-        if "://" in v:
-            raise ValueError("registry host must not carry a scheme (got a URL)")
-        if v.endswith("/"):
-            raise ValueError("registry host must not end with '/'")
-        return v
 
     @property
     def registry_host(self) -> str:

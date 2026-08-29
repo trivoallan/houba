@@ -509,3 +509,28 @@ def test_host_rejects_a_scheme() -> None:
 def test_host_rejects_a_trailing_slash() -> None:
     with pytest.raises(ValidationError, match="must not end with"):
         RegistryConfig(host="ghcr.io/acme/")
+
+
+def test_host_rejects_a_leading_slash() -> None:
+    with pytest.raises(ValidationError, match="must not start with"):
+        RegistryConfig(host="/acme")
+
+
+def test_host_rejects_an_empty_value() -> None:
+    with pytest.raises(ValidationError):
+        RegistryConfig(host="")
+
+
+def test_host_rejects_a_whitespace_only_value() -> None:
+    with pytest.raises(ValidationError, match="must not be empty"):
+        RegistryConfig(host="   ")
+
+
+def test_host_rejects_embedded_whitespace() -> None:
+    with pytest.raises(ValidationError, match="must not contain whitespace"):
+        RegistryConfig(host=" ghcr.io/acme")
+
+
+def test_host_rejects_an_empty_path_segment() -> None:
+    with pytest.raises(ValidationError, match="empty path segment"):
+        RegistryConfig(host="ghcr.io//acme")
