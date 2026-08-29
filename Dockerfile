@@ -25,7 +25,11 @@ COPY --from=anchore/syft:v1.51.1 /syft /usr/bin/syft
 # bash: the demo/ops Jobs (reconcile helpers, blast-radius, publish-sbom, scan-attach, seed-incident)
 # run bash scripts mounted into this image — Alpine ships only busybox sh, so add bash (regression
 # from the Alpine runtime rebase). knock itself (Python) does not need it.
-RUN apk add --no-cache ca-certificates bash
+# `git` is a runtime dependency, not a build one: GitAdapter shells out to it for the
+# git-sourced path (`ls-remote` to resolve a ref, `fetch` to materialise the tree).
+# Without it a skill policy fails with `SourceError: git binary not found in PATH` —
+# found by a real canary run, because the tests use the host's git.
+RUN apk add --no-cache ca-certificates bash git
 
 COPY --from=build /src/dist/*.whl /tmp/
 # ponytail: musl test — if pydantic-core (Rust) / pyyaml (C) fall to source build
