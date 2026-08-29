@@ -221,6 +221,42 @@ def _has_marker(paths: list[str]) -> bool:
     return bool(inner) and _root_marker(inner)
 
 
+# incongru-voix: illich — seuil ≈ 22 skills/an — le soumissionnaire, hors de tout compte
+#
+# Ce portillon promet du temps : personne n'audite plus une skill externe à la main. Le
+# calcul des deux termes, en ordre de grandeur assumé.
+#
+#   Temps rendu     relecture manuelle d'une skill avant adoption ≈ 40 min
+#                   → N fois 0,67 h/an
+#
+#   Temps englouti  construction (4 modules, ~750 l. + tests) ≈ 32 h, amortie sur 3 ans   ≈ 11 h/an
+#                   entretien de la liste de marqueurs ci-dessus (voir son commentaire :
+#                   elle périme *silencieusement* à chaque montée de version du client)   ≈  4 h/an
+#                   ────────────────────────────────────────────────────────────────────────────
+#                                                                                        ≈ 15 h/an
+#
+#   Seuil           15 ÷ 0,67 ≈ 22 skills/an, soit ~2 par mois.
+#
+#   En dessous de ce volume, le portillon coûte plus qu'il ne rend : à 5 skills/an le
+#   rapport est de 15 h contre 3,3 h, soit ≈ 4,5. Au-dessus, il paie. Le chiffre à vérifier
+#   avant d'aller plus loin n'est donc pas dans ce fichier — c'est le débit réel d'entrées.
+#
+# Le second seuil, celui où l'outil produit l'inverse de son but, ne dépend pas du volume
+# mais de ce message d'erreur. Une liste de marqueurs périmée refuse une skill correcte en
+# affichant la liste comme si elle faisait autorité. Le soumissionnaire en conclut que sa
+# skill est mal formée, la contourne, et l'installe à la main : le parc croit alors avoir un
+# portillon qui ne certifie plus rien. C'est pire que pas de portillon — et le coût de ce
+# détour n'apparaît dans aucun compte, puisqu'il est payé par celui qui soumet, pas par
+# celui qui opère.
+#
+# D'où la dernière clause du message : elle ne corrige pas la péremption, elle la rend
+# dicible. Un refus qui nomme sa propre faillibilité laisse la prise à l'usager ; un refus
+# qui se présente comme un fait la lui retire.
+#
+# Convivialité, les trois questions : comprendre ? oui, tout est ici et pur. Réparer ? oui
+# pour les refus, non pour la liste, dont la justesse vit chez un client externe. S'en
+# passer ? oui — et c'est précisément cette sortie qui transforme un faux refus en
+# contournement. Deux oui : l'outil sert son usager. Il ne l'emploie pas.
 def _layout_error(paths: list[str]) -> ArchiveLayoutError:
     found_dirs = sorted({p.partition("/")[0] for p in paths if "/" in p})
     found_files = sorted({p for p in paths if "/" not in p})
@@ -230,6 +266,8 @@ def _layout_error(paths: list[str]) -> ArchiveLayoutError:
         f"root files found: {', '.join(found_files) if found_files else 'none'}; "
         f"expected a directory marker among [{', '.join(PLUGIN_MARKER_DIRS)}] "
         f"or a file marker among [{', '.join(PLUGIN_MARKER_FILES)}] (matched case-sensitively)"
+        " — if this layout looks correct, the marker list above may be stale: re-verify it"
+        " against the intake spec (or the client) before assuming the artifact is at fault"
     )
 
 
