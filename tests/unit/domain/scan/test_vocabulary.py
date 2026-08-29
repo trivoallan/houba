@@ -10,7 +10,7 @@ def test_vocabulary_lists_common_envelope_keys() -> None:
 
 def test_vocabulary_lists_optional_keys() -> None:
     vocab = scan_annotation_vocabulary()
-    assert vocab["optional"] == ["scan.tool.version"]
+    assert vocab["optional"] == ["scan.tool.version", "scan.ruleset.hash"]
 
 
 def test_vocabulary_lists_per_format_fact_keys() -> None:
