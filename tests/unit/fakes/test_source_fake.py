@@ -78,3 +78,11 @@ def test_fetch_reroots_onto_a_seeded_subdirectory(tmp_path: Path) -> None:
     # exactly as it does after GitAdapter clones and then roots at `workdir / path`.
     assert fetched.root == tmp_path / "a"
     assert (fetched.root / "SKILL.md").read_text() == "# inner\n"
+
+
+def test_fetch_materialises_nothing_when_the_tree_is_unseeded(tmp_path: Path) -> None:
+    # The empty default is what lets a test assert that nothing extra was written.
+    # A fake that silently produced a file would mask exactly that bug.
+    fake = FakeSourcePort(revisions={("https://x/y.git", "v1"): "b" * 40})
+    fetched = fake.fetch("https://x/y.git", "v1", tmp_path)
+    assert list(fetched.root.iterdir()) == []

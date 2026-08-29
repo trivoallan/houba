@@ -19,14 +19,14 @@ class FakeSourcePort:
         # arguments: they are the evidence a planner test uses to claim "resolved but
         # never fetched", and a journal a caller can pre-populate is not evidence.
         self._revisions = revisions or {}  # (origin, ref) -> revision; absent ⇒ unknown ref
-        # Files `fetch` materialises, relative to the tree root. Defaults to a single
-        # `SKILL.md` — the cheapest tree satisfying `plan_archive`'s plugin-marker
-        # requirement (`PLUGIN_MARKER_FILES` in knock/domain/packaging.py) — so a
-        # planner test driven through the real packaging path doesn't have to restate
-        # it just to avoid `ArchiveLayoutError`. Do not default this to `{}`: unlike
-        # every other seed field here, an empty tree is not a valid fixture for that
-        # path, it's a guaranteed failure of it.
-        self._tree = tree if tree is not None else {"SKILL.md": "# probe\n"}
+        # Files `fetch` materialises, relative to the repository root. Empty by
+        # default, like every other seed field here: a generic SourcePort fake should
+        # not carry skill-domain content, and an unseeded tree that silently produced a
+        # file would mask a bug in code asserting nothing extra was materialised.
+        # A test driving the real packaging path must seed a plugin marker itself —
+        # `{"SKILL.md": "..."}` is the cheapest (see PLUGIN_MARKER_FILES in
+        # knock/domain/packaging.py) — or `plan_archive` raises `ArchiveLayoutError`.
+        self._tree = tree or {}
         self.resolved: list[tuple[str, str]] = []
         self.fetched: list[tuple[str, str]] = []
 

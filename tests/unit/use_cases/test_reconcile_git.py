@@ -63,6 +63,11 @@ def policy() -> MirrorPolicy:
     return parse_mirror_policy(_SKILL)
 
 
+# Seeded explicitly: FakeSourcePort materialises nothing by default, and the apply
+# tests drive the real packaging path, which refuses a tree with no plugin marker.
+_TREE = {"SKILL.md": "# probe\n"}
+
+
 def _planner(
     source: FakeSourcePort,
     registry: FakeRegistryPort,
@@ -97,7 +102,7 @@ def test_git_planner_claims_git_sources_only(policy: MirrorPolicy) -> None:
 def test_plan_resolves_the_ref_and_never_fetches(policy: MirrorPolicy) -> None:
     # The convergence claim: a plan phase that had to clone every repository to say
     # "nothing to do" would not be a dry run, which is why `resolve` exists at all.
-    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
     planner = _planner(source, FakeRegistryPort(tags={_DEST: []}))
     planner.plan([policy])
     assert source.resolved == [(_URL, _REF)]
@@ -105,7 +110,7 @@ def test_plan_resolves_the_ref_and_never_fetches(policy: MirrorPolicy) -> None:
 
 
 def test_plan_emits_the_ref_name_as_a_moving_alias(policy: MirrorPolicy) -> None:
-    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
     aliases = _planner(source, FakeRegistryPort(tags={_DEST: []})).plan([policy])
     assert [(a.dest_repo, a.alias, a.target) for a in aliases] == [
         (_DEST, _REF, f"{REVISION_TAG_PREFIX}{_REV}")
@@ -116,7 +121,7 @@ def test_plan_consults_the_destination_tag_list(policy: MirrorPolicy) -> None:
     # Convergence rests on this read and nothing else. Whether it *results* in a skip
     # is asserted against the operations `apply` emits — an `is_up_to_date` accessor on
     # the planner would be production API that exists only for a test.
-    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
     registry = FakeRegistryPort(tags={_DEST: []})
     _planner(source, registry).plan([policy])
     assert registry.listed_tags == [_DEST]
@@ -147,7 +152,7 @@ def _operations(reports: list[PolicyReport]) -> list[Operation]:
 
 
 def test_apply_imports_and_aliases_a_new_revision(policy: MirrorPolicy, tmp_path: Path) -> None:
-    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
     registry = FakeRegistryPort(tags={_DEST: []})
     reporter = FakeReporter()
     planner = _planner(source, registry, work_dir=tmp_path)
@@ -170,7 +175,7 @@ def test_apply_skips_an_already_placed_revision_without_fetching(
 ) -> None:
     # The convergence claim, asserted where it matters: a scheduled run over an
     # unchanged upstream must transfer nothing at all.
-    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
     registry = FakeRegistryPort(tags={_DEST: [f"{REVISION_TAG_PREFIX}{_REV}"]})
     planner = _planner(source, registry, work_dir=tmp_path)
     planner.plan([policy])
@@ -186,7 +191,7 @@ def test_apply_skips_an_already_placed_revision_without_fetching(
 
 def test_dry_run_neither_fetches_nor_pushes(policy: MirrorPolicy, tmp_path: Path) -> None:
     # Decision 3's whole purpose: the plan is shown without materialising a tree.
-    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
     registry = FakeRegistryPort(tags={_DEST: []})
     planner = _planner(source, registry, dry_run_tags=True, work_dir=tmp_path)
     planner.plan([policy])
@@ -208,7 +213,7 @@ def test_one_failing_policy_does_not_abort_the_batch(policy: MirrorPolicy, tmp_p
         )
     )
     broken_dest = "registry.example/skills/broken-skill"
-    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
     registry = FakeRegistryPort(
         tags={_DEST: [], broken_dest: []},
         fail_put={f"{broken_dest}:{REVISION_TAG_PREFIX}{_REV}"},
