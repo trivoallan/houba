@@ -317,13 +317,13 @@
     },
     "attest_fulcio_url": {
       "default": "",
-      "description": "Keyless CA URL; blank \u21d2 public Fulcio.",
+      "description": "Keyless CA URL; blank \u21d2 public Fulcio for `keyless`, no CA for `kms`/`key`.",
       "title": "Attest Fulcio Url",
       "type": "string"
     },
     "attest_rekor_url": {
       "default": "",
-      "description": "Transparency-log URL; blank \u21d2 no log entry.",
+      "description": "Transparency-log URL; blank \u21d2 public Rekor for `keyless`, no log for `kms`/`key`.",
       "title": "Attest Rekor Url",
       "type": "string"
     },
