@@ -476,3 +476,36 @@ def test_scan_redis_addr_without_port_is_rejected(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("KNOCK_SCAN_REDIS", '{"addr": "localhost"}')
     with pytest.raises(ValidationError, match="addr must be host:port"):
         scan_redis_from_env()
+
+
+# ---------------------------------------------------------------------------
+# RegistryConfig decomposes a path-prefixed host
+# ---------------------------------------------------------------------------
+
+
+def test_registry_host_strips_the_path_prefix() -> None:
+    cfg = RegistryConfig(host="ghcr.io/acme")
+    assert cfg.registry_host == "ghcr.io"
+    assert cfg.path_prefix == "acme"
+
+
+def test_a_bare_host_has_no_path_prefix() -> None:
+    cfg = RegistryConfig(host="harbor.corp:443")
+    assert cfg.registry_host == "harbor.corp:443"
+    assert cfg.path_prefix == ""
+
+
+def test_a_multi_segment_prefix_is_kept_whole() -> None:
+    cfg = RegistryConfig(host="artifactory.corp/docker-local/team")
+    assert cfg.registry_host == "artifactory.corp"
+    assert cfg.path_prefix == "docker-local/team"
+
+
+def test_host_rejects_a_scheme() -> None:
+    with pytest.raises(ValidationError, match="must not carry a scheme"):
+        RegistryConfig(host="https://ghcr.io/acme")
+
+
+def test_host_rejects_a_trailing_slash() -> None:
+    with pytest.raises(ValidationError, match="must not end with"):
+        RegistryConfig(host="ghcr.io/acme/")

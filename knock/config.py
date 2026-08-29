@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from knock.domain.deletion_mode import DeletionMode
@@ -26,7 +26,10 @@ class RegistryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     host: str = Field(
-        description="Registry host, e.g. `harbor.example.com` or `localhost:5001`.",
+        description="Registry host, optionally with a path-prefix namespace — "
+        "`harbor.example.com`, `localhost:5001`, or `ghcr.io/acme`. Image references "
+        "compose from the whole value; regctl's registry-level operations (login, TLS "
+        "configuration, catalog walk) use only the host part. No scheme, no trailing slash.",
     )
     username: str | None = Field(
         default=None,
@@ -58,6 +61,33 @@ class RegistryConfig(BaseModel):
         if (self.username is None) != (self.password is None):
             raise ValueError("registry username and password must be set together")
         return self
+
+    @field_validator("host")
+    @classmethod
+    def _host_is_bare(cls, v: str) -> str:
+        if "://" in v:
+            raise ValueError("registry host must not carry a scheme (got a URL)")
+        if v.endswith("/"):
+            raise ValueError("registry host must not end with '/'")
+        return v
+
+    @property
+    def registry_host(self) -> str:
+        """The bare registry host, without the path-prefix namespace.
+
+        `host` may carry a prefix (`ghcr.io/acme`) because GHCR, GitLab and Artifactory
+        namespace by path. Image refs compose from the full `host`; regctl's registry-level
+        operations (`registry set` / `registry login` / `repo ls`) take the bare host only.
+
+        (Sibling of the module-level `registry_host` helper imported from
+        `knock.domain.scan.refs`, which extracts the same component from an image ref.)
+        """
+        return self.host.split("/", 1)[0]
+
+    @property
+    def path_prefix(self) -> str:
+        """The namespace part of `host`: `acme` for `ghcr.io/acme`, `""` for `harbor.corp`."""
+        return self.host.partition("/")[2]
 
 
 class CACertSource(BaseModel):
