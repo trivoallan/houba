@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from knock.adapters.local_archiver import LocalArchiver
 from knock.config import CACertSource, PackageMirror, RegistryConfig
 from knock.domain.mirror_policy import MirrorPolicy, parse_mirror_policy
 from knock.domain.transforms.base import ResolvedResource, ResolvedStep
@@ -12,11 +13,13 @@ from knock.domain.transforms.render import transform_version
 from knock.errors import ConfigError, PolicyValidationError, RegctlError
 from knock.ports.registry import ImageInfo
 from knock.use_cases.reconcile import reconcile_policies
+from knock.use_cases.reconcile_git import REVISION_TAG_PREFIX
 from knock.use_cases.reconcile_registry import to_mirror_artifact, to_source_artifact
 from knock.use_cases.report import RunReport
 from tests.fakes.image_builder import FakeImageBuilder
 from tests.fakes.registry import FakeRegistryPort
 from tests.fakes.reporter import FakeReporter
+from tests.fakes.source import FakeSourcePort
 
 NOW = datetime(2026, 6, 11, tzinfo=UTC)
 CREATED = datetime(2026, 1, 1, tzinfo=UTC)
@@ -105,6 +108,12 @@ def _run(policies, **kw):  # type: ignore[no-untyped-def]
         max_concurrency=kw.pop("max_concurrency", 1),
         shard_index=kw.pop("shard_index", 0),
         shard_count=kw.pop("shard_count", 1),
+        # A FakeSourcePort that resolves nothing, for the majority of these tests that
+        # carry no git policy. The archiver is the real one, never a fake — see
+        # `ports/archiver.py`: the defects it guards are properties of a real filesystem.
+        source=kw.pop("source", FakeSourcePort()),
+        archiver=kw.pop("archiver", LocalArchiver()),
+        work_dir=kw.pop("work_dir", None),
     )
     return reconcile_policies(policies, **defaults)
 
@@ -134,6 +143,8 @@ spec:
         [policy],
         registry=registry,
         builder=FakeImageBuilder(),
+        source=FakeSourcePort(),
+        archiver=LocalArchiver(),
         roster={
             "src": RegistryConfig(host="src.local", tls_verify=False),
             "dst": RegistryConfig(host="dst.local"),
@@ -203,6 +214,8 @@ spec:
         [policy],
         registry=fake,
         builder=FakeImageBuilder(),
+        source=FakeSourcePort(),
+        archiver=LocalArchiver(),
         roster={"ghcr": RegistryConfig(host="ghcr.io/acme", username="u", password="p")},
         ca_certs={},
         package_mirrors={},
@@ -234,42 +247,113 @@ spec:
 """)
 
 
-def test_git_sourced_policy_is_skipped_not_fatal() -> None:
-    # reconcile only knows how to mirror registry sources today; a git-sourced policy
-    # (skill is git-only) sitting in the same worklist must not blow up the whole run
-    # with an InternalError — the registry-sourced policy still reconciles normally,
-    # and the git one is reported as an explicit, non-zero-information skip rather
-    # than silently doing nothing.
+_SKILL_URL = "https://github.com/example/agent-skill.git"
+_SKILL_REF = "v1.2.0"
+_SKILL_REV = "c" * 40
+_SKILL_DEST = "harbor.corp/skills/example-skill"
+# Seeded explicitly: FakeSourcePort materialises nothing by default, and this path drives
+# the real packaging, which refuses a tree with no plugin marker.
+_SKILL_TREE = {"SKILL.md": "# probe\n"}
+
+
+def _skill_source(tree: dict[str, str] | None = None) -> FakeSourcePort:
+    return FakeSourcePort(revisions={(_SKILL_URL, _SKILL_REF): _SKILL_REV}, tree=tree)
+
+
+def test_a_git_sourced_policy_reconciles_alongside_a_registry_one(tmp_path: Path) -> None:
+    # A git-sourced policy is now claimed by a planner rather than reported unsupported.
+    # Asserted in the same worklist as a registry-sourced policy, because the driver's
+    # job is that neither source class knows the other exists.
     fake = FakeRegistryPort(
         tags={
             "docker.io/library/redis": ["7.2.0"],
             "harbor.corp/lib/redis": [],
+            _SKILL_DEST: [],
         },
         infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
     )
+    source = _skill_source(_SKILL_TREE)
     reporter = FakeReporter()
-    report = _run([POLICY, GIT_POLICY], registry=fake, reporter=reporter)
+    report = _run(
+        [POLICY, GIT_POLICY], registry=fake, source=source, reporter=reporter, work_dir=tmp_path
+    )
 
     # The registry-sourced policy reconciled fully, unaffected by its git-sourced sibling.
     assert ("docker.io/library/redis@sha256:a", "harbor.corp/lib/redis:7.2.0") in fake.copied
-    redis_report = next(p for p in report.policies if p.name == "redis")
-    assert redis_report.status == "ok"
+    assert next(p for p in report.policies if p.name == "redis").status == "ok"
 
-    # The git-sourced policy is reported, not silently absent — with an actionable
-    # reason, and NOT the "bug" exit code an uncaught InternalError would carry.
-    skill_report = next(p for p in report.policies if p.name == "example-skill")
-    assert skill_report.status == "failed"
-    assert skill_report.error is not None
-    assert "git" in skill_report.error.message
-    assert skill_report.error.type != "InternalError"
+    skill = next(p for p in report.policies if p.name == "example-skill")
+    assert skill.status == "ok"
+    assert skill.error is None
+    assert (skill.totals.imported, skill.totals.aliased) == (1, 1)
+    # The revision was fetched and placed under its immutable tag, with the ref name
+    # copied onto it as the moving alias.
+    assert source.fetched == [(_SKILL_URL, _SKILL_REF)]
+    revision_tag = f"{REVISION_TAG_PREFIX}{_SKILL_REV}"
+    assert [ref for ref, *_ in fake.artifacts] == [f"{_SKILL_DEST}:{revision_tag}"]
+    assert (f"{_SKILL_DEST}:{revision_tag}", f"{_SKILL_DEST}:{_SKILL_REF}") in fake.copied
+    assert (_SKILL_REF, "example-skill") not in [(n, e.type) for n, e in reporter.failures]
+    assert (("example-skill", _SKILL_URL)) in reporter.policies_started
 
-    assert (
-        "example-skill",
-        "https://github.com/example/agent-skill.git",
-    ) in reporter.policies_started
-    failed_names = [name for name, _err in reporter.failures]
-    assert "example-skill" in failed_names
-    assert all(err.type != "InternalError" for _name, err in reporter.failures)
+
+def test_a_rerun_over_an_unchanged_revision_places_nothing(tmp_path: Path) -> None:
+    # The convergence property the whole git path exists to provide, asserted through
+    # the driver: a scheduled re-run over an unchanged upstream transfers nothing.
+    revision_tag = f"{REVISION_TAG_PREFIX}{_SKILL_REV}"
+    fake = FakeRegistryPort(
+        tags={_SKILL_DEST: [revision_tag, _SKILL_REF]},
+        annotations={f"{_SKILL_DEST}:{_SKILL_REF}": {_REV: _SKILL_REV}},
+    )
+    source = _skill_source()
+    report = _run([GIT_POLICY], registry=fake, source=source, work_dir=tmp_path)
+
+    skill = next(p for p in report.policies if p.name == "example-skill")
+    assert skill.status == "ok"
+    assert skill.totals.skipped == 1
+    assert (skill.totals.imported, skill.totals.aliased) == (0, 0)
+    assert source.fetched == []
+    assert fake.artifacts == []
+    assert fake.copied == []
+
+
+# Same `metadata.name` as GIT_POLICY, deliberately: a destination repository must be
+# owned by exactly one policy, and `detect_dest_repo_collisions` enforces that over all
+# policies before any planner runs. So the only cross-source-class alias collision that
+# can reach `detect_alias_collisions` is one inside a single policy name — which is
+# precisely the case no individual planner can see, and the reason the driver holds the
+# check over the union of both planners' entries rather than each planner checking its own.
+COLLIDING_IMAGE_POLICY = parse_mirror_policy(f"""
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata: {{ name: example-skill }}
+spec:
+  artifactType: image
+  source: {{ registry: docker.io, repository: library/redis }}
+  imports:
+    - name: v7
+      tags: {{ includeRegex: "^7\\\\.", aliases: ["{_SKILL_REF}"] }}
+      destinations: [{{ project: skills, repository: example-skill }}]
+""")
+
+
+def test_an_alias_collision_across_source_classes_is_caught_before_any_mutation(
+    tmp_path: Path,
+) -> None:
+    fake = FakeRegistryPort(
+        tags={"docker.io/library/redis": ["7.2.0"], _SKILL_DEST: []},
+        infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
+    )
+    with pytest.raises(PolicyValidationError, match="alias collision"):
+        _run(
+            [COLLIDING_IMAGE_POLICY, GIT_POLICY],
+            registry=fake,
+            source=_skill_source(_SKILL_TREE),
+            work_dir=tmp_path,
+        )
+    # Plan-phase, so nothing was written by either planner.
+    assert fake.copied == []
+    assert fake.artifacts == []
+    assert fake.annotated == []
 
 
 def test_copy_path_pins_the_source_digest_it_stamps() -> None:
@@ -341,6 +425,8 @@ spec:
             [policy],
             registry=fake,
             builder=FakeImageBuilder(),
+            source=FakeSourcePort(),
+            archiver=LocalArchiver(),
             roster=ROSTER,
             ca_certs={},
             package_mirrors={},
@@ -559,6 +645,8 @@ def _run_hardened(
     kwargs: dict[str, object] = dict(
         registry=registry,
         builder=builder,
+        source=FakeSourcePort(),
+        archiver=LocalArchiver(),
         roster={"local": RegistryConfig(host="reg.local")},
         ca_certs={"corp": CACertSource(pem="PEMDATA")},
         package_mirrors={"corp": PackageMirror(apt="https://mirror.corp")},
@@ -779,6 +867,8 @@ def test_configure_registry_called_once_per_host_before_copy() -> None:
         [_copy_policy()],
         registry=registry,
         builder=builder,
+        source=FakeSourcePort(),
+        archiver=LocalArchiver(),
         roster={"local": RegistryConfig(host="reg.local", tls_verify=False, ca_cert="/ca.pem")},
         ca_certs={},
         package_mirrors={},

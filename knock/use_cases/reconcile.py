@@ -23,16 +23,19 @@ from knock.domain.collision import (
     detect_dest_repo_collisions,
 )
 from knock.domain.deletion_mode import DeletionMode
-from knock.domain.mirror_policy import Archive, GitSource, MirrorPolicy
+from knock.domain.mirror_policy import Archive, MirrorPolicy
 from knock.domain.policy_merge import resolve_imports
 from knock.domain.sharding import owns
-from knock.errors import UnsupportedSourceError, exit_code_for
+from knock.errors import InternalError
+from knock.ports.archiver import ArchiverPort
 from knock.ports.attestor import AttestorPort
 from knock.ports.image_builder import ImageBuilderPort
 from knock.ports.registry import RegistryPort
-from knock.ports.reporter import Counts, ErrorInfo, Reporter
+from knock.ports.reporter import Reporter
 from knock.ports.sbom import SbomGeneratorPort
+from knock.ports.source import SourcePort
 from knock.use_cases.policy_planner import PolicyPlanner
+from knock.use_cases.reconcile_git import GitPlanner
 from knock.use_cases.reconcile_registry import RegistryPlanner
 from knock.use_cases.report import (
     PolicyReport,
@@ -41,33 +44,6 @@ from knock.use_cases.report import (
     RunStatus,
     merge_counts,
 )
-
-
-def _skipped_source_report(policy: MirrorPolicy, reporter: Reporter) -> PolicyReport:
-    """Report and record a policy whose source this use case does not reconcile yet.
-
-    Both source kinds are legitimate `MirrorPolicy` shapes (see mirror_policy.py); this
-    use case just doesn't know how to mirror a git source. Never raises: the whole
-    point is that one such policy must not abort the run for every other policy in the
-    worklist, and must not vanish from the report silently either — an operator needs
-    to see why it did nothing.
-    """
-    source = policy.spec.source
-    assert isinstance(source, GitSource)  # the only non-RegistrySource member of Source
-    exc = UnsupportedSourceError(
-        f"policy '{policy.metadata.name}' is git-sourced; not handled by reconcile"
-    )
-    info = ErrorInfo(type=type(exc).__name__, message=str(exc), exit_code=exit_code_for(exc))
-    reporter.policy_started(policy.metadata.name, source.url)
-    reporter.policy_failed(policy.metadata.name, info)
-    return PolicyReport(
-        name=policy.metadata.name,
-        source=source.url,
-        status="failed",
-        error=info,
-        totals=Counts(),
-        targets=[],
-    )
 
 
 def _resolved_dest_repos(policy: MirrorPolicy, roster: dict[str, RegistryConfig]) -> list[str]:
@@ -86,6 +62,8 @@ def reconcile_policies(
     *,
     registry: RegistryPort,
     builder: ImageBuilderPort,
+    source: SourcePort,
+    archiver: ArchiverPort,
     roster: dict[str, RegistryConfig],
     ca_certs: dict[str, CACertSource],
     package_mirrors: dict[str, PackageMirror],
@@ -126,9 +104,7 @@ def reconcile_policies(
 
     # --- Dispatch: one planner per source class, chosen by `handles`. ---
     # A list, not a special case: a new source class appends its planner here and the
-    # rest of this function is unchanged. Policies no planner claims are reported as
-    # skipped rather than aborting the run for every other policy in the worklist —
-    # git-sourced policies land there until a planner claims them.
+    # rest of this function is unchanged.
     planners: list[PolicyPlanner] = [
         RegistryPlanner(
             registry=registry,
@@ -149,9 +125,25 @@ def reconcile_policies(
             sbom_formats=sbom_formats,
             retention_global=retention_global,
         ),
+        GitPlanner(
+            registry=registry,
+            source=source,
+            archiver=archiver,
+            roster=roster,
+            now=now,
+            label_prefix=label_prefix,
+            dry_run_tags=dry_run_tags,
+            work_dir=work_dir,
+        ),
     ]
     batches = [(pl, [p for p in policies if pl.handles(p)]) for pl in planners]
     unclaimed = [p for p in policies if not any(pl.handles(p) for pl in planners)]
+    if unclaimed:
+        # Every member of the `Source` union has a planner, so this is a third member
+        # added without one — a bug, not user input, and not something to report as a
+        # skip: a policy silently doing nothing is the failure mode a coverage tool can
+        # least afford.
+        raise InternalError(f"no planner handles policy '{unclaimed[0].metadata.name}'")
 
     # --- Plan phase (fail-fast): every planner plans its batch, then ONE collision
     # check across all of them. Planning mutates nothing, so config errors (unknown
@@ -164,8 +156,8 @@ def reconcile_policies(
     detect_alias_collisions(alias_entries)  # fail fast before ANY mutation
 
     # --- Apply phase (isolated per policy). ---
-    reporter.run_started(sum(len(batch) for _, batch in batches) + len(unclaimed), mode=mode)
-    policy_reports: list[PolicyReport] = [_skipped_source_report(p, reporter) for p in unclaimed]
+    reporter.run_started(len(policies), mode=mode)
+    policy_reports: list[PolicyReport] = []
     with ExitStack() as stack:
         executor: ThreadPoolExecutor | None = (
             stack.enter_context(ThreadPoolExecutor(max_workers=max_concurrency))

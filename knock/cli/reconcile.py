@@ -66,6 +66,8 @@ def reconcile(
         policies,
         registry=container.registry,
         builder=container.builder,
+        source=container.source,
+        archiver=container.archiver,
         roster=container.settings.registries,
         ca_certs=container.settings.transform_ca_certs,
         package_mirrors=container.settings.transform_package_mirrors,

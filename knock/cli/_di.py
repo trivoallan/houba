@@ -12,6 +12,8 @@ from typing import Any
 from knock.adapters.buildkit_cli import BuildkitAdapter
 from knock.adapters.command_usage import CommandUsageAdapter
 from knock.adapters.cosign_cli import CosignAdapter
+from knock.adapters.git_cli import GitAdapter
+from knock.adapters.local_archiver import LocalArchiver
 from knock.adapters.regctl_cli import RegctlAdapter
 from knock.adapters.structlog_reporter import StructlogReporter
 from knock.adapters.syft_cli import SyftAdapter
@@ -31,6 +33,8 @@ class Container:
     reporter: StructlogReporter
     attestor: AttestorPort | None
     sbom_generator: SyftAdapter
+    source: GitAdapter
+    archiver: LocalArchiver
 
 
 def build_container(settings: Settings | None = None) -> Container:
@@ -44,6 +48,8 @@ def build_container(settings: Settings | None = None) -> Container:
         reporter=StructlogReporter(),
         attestor=attestor,
         sbom_generator=SyftAdapter(),
+        source=GitAdapter(),
+        archiver=LocalArchiver(),
     )
 
 
