@@ -178,9 +178,10 @@ lists its exclusions with reasons, and the drop guard catches mass exclusion.
 
 In the order they should be written.
 
-1. **SARIF contract.** Does a real SkillSpector report pass `detect_format` and then `SarifMapper`?
-   Fixture: actual SkillSpector output on a test skill. **This is the only test that can invalidate
-   the whole approach — write it first.** Compatibility is likely but has not been verified.
+1. **SARIF contract.** ~~Does a real SkillSpector report pass `detect_format` and then
+   `SarifMapper`?~~ **Verified on 2026-08-29 — see the section above.** Keep it as a regression test:
+   commit a real SkillSpector report as a fixture and assert `detect_format` returns `sarif` and
+   `summarize` yields the expected facts. It guards against an upstream format change.
 2. **Dispatch.** An artifact whose manifest `artifactType` is the skill media type routes to
    SkillSpector, an image routes to regis. Scanner stubbed; typing **not** stubbed. Include the
    degenerate case: an artifact with **no** `artifactType` must route to regis, not crash.
@@ -203,13 +204,57 @@ artifact class, orchestrating SkillSpector as one more analyzer with JSON Logic 
 worker's skill branch changes from "invoke SkillSpector" to "invoke regis", and everything
 downstream — attach, gc, the gate, the projection — is untouched. Nothing built here is thrown away.
 
+## Verified — the SARIF contract holds (2026-08-29)
+
+SkillSpector 2.11.0 was installed from source and run with `--no-llm --format sarif` over its own
+fixtures; the reports were fed to knock's real `detect_format` and `SarifMapper`.
+
+| Check | Result |
+|---|---|
+| `detect_format(raw)` | `'sarif'` — auto-detected, no `--format` override needed |
+| `SarifMapper().recognizes(doc)` | `True` |
+| `SarifMapper().summarize(raw)` | succeeds; `tool='skillspector'`, `tool_version='2.11.0'` |
+| SARIF version emitted | 2.1.0, one `run`, results carry `ruleId` and `level` |
+| `vuln.unknown` count | 0 — every result carries a `level`, so nothing falls into the unknown bucket |
+
+Gate behaviour over SkillSpector's own fixtures, via the existing `gate_breached`:
+
+| Fixture | `vuln` crit/high/med/low | `fail_on=high` | `fail_on=medium` |
+|---|---|---|---|
+| `safe_skill` | 0/0/0/0 | pass | pass |
+| `mcp_clean_skill` | 0/0/2/0 | pass | **blocked** |
+| `mcp_poisoned_tool` | 0/6/2/2 | **blocked** | **blocked** |
+| `malicious_skill` | 0/2/4/0 | **blocked** | **blocked** |
+
+**`fail_on=high` is therefore the default threshold**: it passes the clean fixtures and blocks both
+malicious ones. This closes what was open question 3. No knock code was needed to obtain this — the
+existing mapper and gate handle SkillSpector output as-is.
+
+### The one real defect: findings land in `vuln.*`, not `policy.*`
+
+SkillSpector emits no SARIF `kind`. ADR 0039 keys on `kind` — deliberately, "never on the tool name",
+to stay analyzer-agnostic — so every SkillSpector finding is classified as a **vulnerability** rather
+than a policy verdict.
+
+This matters operationally, not just semantically: the pipeline publishes `vuln` facts to
+Dependency-Track and blast-radius is computed from them. A prompt-injection finding would be counted
+as a CVE in the one dashboard security looks at during an incident.
+
+**Do not fix this by rewriting the report in the adapter.** knock would then publish something other
+than what the tool said, which damages the provenance the product exists to provide. Two acceptable
+paths:
+
+1. **Upstream (correct).** `kind: "fail"` is the standard SARIF value for a failed evaluation. Ask
+   SkillSpector to emit it. The evidence above is a concrete, reproducible case to bring.
+2. **Locally, until then.** Exclude skill artifacts from the Dependency-Track publish leg. The gate
+   works either way; only the downstream vulnerability metrics need protecting.
+
 ## Open questions
 
-1. **Is SkillSpector's SARIF accepted by knock's `SarifMapper`?** Untested. Test 1 answers it.
-2. **Where does the LLM report get shown to the human reviewer?** It is attached as a referrer, but
+1. **Where does the LLM report get shown to the human reviewer?** It is attached as a referrer, but
    the reviewing surface is the still-open question from the intake work ("who reviews, and where").
-3. **Which severity maps to a blocking verdict by default?** Needs one pass over SkillSpector's
-   finding taxonomy against knock's `Severity` enum.
-4. **Does SkillSpector run acceptably in the scan worker image**, or does it need its own container
-   the way buildkitd does? It is a Python tool with an official image; the choice affects the
-   deployment composition, not the design.
+2. **Does SkillSpector run acceptably in the scan worker image**, or does it need its own container
+   the way buildkitd does? It is a Python tool (`requires-python >=3.12,<3.15`) with a Dockerfile in
+   its repo but no published image on ghcr or PyPI as of 2026-08-29 — it installs from source. That
+   affects deployment composition, not the design.
+3. **Does the `kind` defect get fixed upstream or worked around?** See above.
