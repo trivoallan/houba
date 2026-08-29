@@ -108,10 +108,11 @@ under `docs/architecture/_export/` refreshed.
   branch grows one tag per placement. This is the deliberate cost of decision "retention is
   refused": whoever pinned `sha-<revision>` keeps resolving it. Archives are small, but the tag list
   is unbounded and registry storage should be budgeted for it.
-- **`UnsupportedSourceError` is now dead code.** It has no production caller — nothing in `knock/`
-  raises it, because there is no longer an unsupported source. It is **deliberately left in place
-  here** rather than deleted, so that this branch's diff stays about behaviour; removing it (and its
-  `__all__` entry and exit-code pin) is a separate, trivially reviewable commit.
+- **`UnsupportedSourceError` is gone.** It had no production caller once a planner claimed every
+  source class, because there is no longer an unsupported source. It was removed in its own commit,
+  kept separate so this branch's behavioural diff stayed readable. Anything catching it by name —
+  there was nothing in this repository — would need updating; it never appeared in a public
+  contract, only in a `PolicyReport.error.type` string for a run shape that can no longer occur.
 - **Not done here, each needing its own plan:** a standalone CLI verb for a one-off intake (the
   reconcile path is now the only caller); variants for skills — no transform means nothing to fan
   out, and a `variants` block on a skill policy is a separate question; SBOM and signing for skills,

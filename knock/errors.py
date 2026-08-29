@@ -30,7 +30,6 @@ __all__ = [
     "SourceRevisionMismatchError",
     "SyftError",
     "UnknownFormatError",
-    "UnsupportedSourceError",
     "UsageOracleError",
     "exit_code_for",
 ]
@@ -81,12 +80,6 @@ class ScanReportError(DomainError):
 
 class UnknownFormatError(DomainError):
     """The scan report format could not be detected and no valid --format was supplied."""
-
-
-class UnsupportedSourceError(DomainError):
-    """A policy's source is a valid MirrorPolicy shape, but this use case does not
-    handle that source kind yet (e.g. a git source reaching a registry-only reconcile
-    run)."""
 
 
 class SourcePathError(DomainError):
