@@ -44,7 +44,14 @@ packages = ["knock"]
 line-length = 100
 target-version = "py313"
 # TODO: retirer cette exclusion une fois le legacy ci/ supprimé (Phase B/C, cf. spec §10).
-extend-exclude = ["ci"]
+#
+# `*.md`: ruff >= 0.16 formats Python code blocks inside Markdown. The blocks in
+# docs/superpowers/specs/ are illustrative — hand-aligned for reading, sometimes
+# elided with `...`, sometimes pseudo-code — not source that runs. Reformatting them
+# to a 100-column rule degrades the document to satisfy a tool that was never meant
+# to judge it. Python files are unaffected; this only stops the formatter reaching
+# into prose.
+extend-exclude = ["ci", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "RUF"]
