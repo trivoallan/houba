@@ -9,7 +9,7 @@ from __future__ import annotations
 from knock.domain.scan.formats.registry import DEFAULT_REGISTRY, Registry
 
 COMMON_KEYS = ["scan.tool", "scan.format", "scan.timestamp", "scan.subject"]
-OPTIONAL_KEYS = ["scan.tool.version"]
+OPTIONAL_KEYS = ["scan.tool.version", "scan.ruleset.hash"]
 
 
 def scan_annotation_vocabulary(registry: Registry = DEFAULT_REGISTRY) -> dict[str, object]:
