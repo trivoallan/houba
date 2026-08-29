@@ -966,3 +966,63 @@ def test_stamp_omits_revision_when_source_has_none() -> None:
     dest_anns = [ann for ref, ann in fake.annotated]
     assert dest_anns
     assert _OCI_REVISION not in dest_anns[0]
+
+
+_FALLBACK_TAG = "sha256-3821e65d0f6c0d2b0a2a3f5c6e7d8a9b0c1d2e3f405162738495a6b7c8d9e0f1"
+
+
+def test_destination_walk_skips_referrers_fallback_tags() -> None:
+    # Registries without the referrers API (GHCR, older Harbor/ECR) store referrer manifests
+    # under a `sha256-<digest>` tag in the SUBJECT's repo, so knock's own first run seeds them
+    # into the destination tag list. They are not images — `inspect` fails on them ("platform
+    # not found") — which made a second reconcile into such a registry impossible.
+    # `infos` is seeded ONLY for the real tag: reaching the fallback tag raises from the fake.
+    fake = FakeRegistryPort(
+        tags={
+            "docker.io/library/redis": ["7.2.0"],
+            "harbor.corp/lib/redis": ["7.2.0", _FALLBACK_TAG],
+        },
+        infos={
+            "docker.io/library/redis:7.2.0": _info("sha256:same"),
+            "harbor.corp/lib/redis:7.2.0": _info(
+                "sha256:mirror", {"org.opencontainers.image.base.digest": "sha256:same"}
+            ),
+        },
+    )
+    report = _run([POLICY], registry=fake)
+    # The real tag is up-to-date → idempotent, and the fallback tag is neither an orphan
+    # to delete nor an image to inspect.
+    assert report.status == "ok"
+    assert report.totals.imported == 0
+    assert report.totals.updated == 0
+    assert report.totals.deleted == 0
+    assert fake.deleted == []
+
+
+def test_source_listing_skips_referrers_fallback_tags() -> None:
+    # Same schema on the SOURCE side: a `sha256-<digest>` tag is never an image a policy
+    # means to mirror, so it must not survive into selection (here `semverOnly: false`
+    # would otherwise let it through).
+    policy = parse_mirror_policy("""
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata: { name: busybox }
+spec:
+  artifactType: image
+  source: { registry: docker.io, repository: library/busybox }
+  imports:
+    - name: all
+      tags: { semverOnly: false }
+      destinations: [{ project: lib, repository: busybox }]
+""")
+    fake = FakeRegistryPort(
+        tags={
+            "docker.io/library/busybox": ["1.38.0", _FALLBACK_TAG],
+            "harbor.corp/lib/busybox": [],
+        },
+        infos={"docker.io/library/busybox:1.38.0": _info("sha256:a")},
+    )
+    report = _run([policy], registry=fake)
+    assert report.status == "ok"
+    assert fake.copied == [("docker.io/library/busybox@sha256:a", "harbor.corp/lib/busybox:1.38.0")]
+    assert report.totals.imported == 1

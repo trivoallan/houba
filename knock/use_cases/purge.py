@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from knock.config import RegistryConfig, resolve_registry
 from knock.domain.lifecycle import PENDING_DELETION_ARTIFACT_TYPE, parse_pending_mark
 from knock.domain.purge import PurgeDecision, decide_purge, usage_window_start
+from knock.domain.scan.refs import is_referrers_fallback_tag
 from knock.errors import KnockError, exit_code_for
 from knock.ports.registry import Referrer, RegistryPort
 from knock.ports.reporter import ErrorInfo
@@ -74,7 +75,11 @@ def purge_marks(
     for _name, cfg in targets:
         ensure_registry_session(registry, cfg, logged_in)
         for repo_ref in walk_repo_refs(registry, cfg):
+            # A `sha256-<digest>` tag is a referrer manifest stored under the referrers-tag
+            # schema (registries without the referrers API), not an image — skip it.
             for tag in registry.list_tags(repo_ref):
+                if is_referrers_fallback_tag(tag):
+                    continue
                 image_ref = f"{repo_ref}:{tag}"
                 for ref in registry.list_referrers(image_ref, PENDING_DELETION_ARTIFACT_TYPE):
                     outcomes.append(

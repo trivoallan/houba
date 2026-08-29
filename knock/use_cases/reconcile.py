@@ -47,6 +47,7 @@ from knock.domain.reconcile import (
 )
 from knock.domain.retention import resolve_archive
 from knock.domain.sbom import build_sbom_annotations, build_sbom_statement, media_type_for
+from knock.domain.scan.refs import is_referrers_fallback_tag
 from knock.domain.sharding import owns
 from knock.domain.stamp import build_stamp_annotations
 from knock.domain.transforms.base import ResolvedResource, ResolvedStep, ResourceRef
@@ -342,7 +343,12 @@ def _apply_plan(
     # BOTH coverage signals (signature + SBOM). Skipped when neither signing nor SBOM is
     # configured — nothing would route to a backfill stage (one fewer registry read per tag).
     need_probe = attestor is not None or bool(sbom_formats)
+    # Registries without the referrers API store referrer manifests under a
+    # `sha256-<digest>` tag in the SUBJECT's repo, so knock's own referrers surface in this
+    # listing. They are not images (`inspect` fails on them) and are never mirror state.
     for out_tag in registry.list_tags(plan.dest_repo):
+        if is_referrers_fallback_tag(out_tag):
+            continue
         info = registry.inspect(f"{plan.dest_repo}:{out_tag}")
         present = (
             {r.artifact_type for r in registry.list_referrers(f"{plan.dest_repo}:{out_tag}")}
@@ -936,7 +942,9 @@ def reconcile_policies(
         src_match = match_registry_by_host(src_repo, roster)
         if src_match is not None:
             ensure_registry_session(registry, src_match[1], logged_in)
-        src_tags = registry.list_tags(src_repo)
+        # Drop the referrers-tag-schema fallbacks the same way (see the destination walk):
+        # a `sha256-<digest>` tag is a referrer manifest, never an image to mirror.
+        src_tags = [t for t in registry.list_tags(src_repo) if not is_referrers_fallback_tag(t)]
         policy_plans: list[_Plan] = []
         for resolved in resolve_imports(policy.spec):
             expanded = expand_import(resolved, src_tags)
