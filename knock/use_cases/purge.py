@@ -20,6 +20,7 @@ from knock.errors import KnockError, exit_code_for
 from knock.ports.registry import Referrer, RegistryPort
 from knock.ports.reporter import ErrorInfo
 from knock.ports.usage_oracle import UsageOraclePort, UsageQuery
+from knock.use_cases.registry_session import ensure_registry_session, walk_repo_refs
 
 PurgeMode = Literal["apply", "dry-run"]
 
@@ -71,18 +72,8 @@ def purge_marks(
     outcomes: list[PurgeOutcome] = []
     logged_in: set[str] = set()
     for _name, cfg in targets:
-        if cfg.host not in logged_in:
-            registry.configure_registry(cfg.host, tls_verify=cfg.tls_verify, ca_cert=cfg.ca_cert)
-            if cfg.username is not None and cfg.password is not None:
-                registry.login(
-                    cfg.host,
-                    username=cfg.username,
-                    password=cfg.password.get_secret_value(),
-                    tls_verify=cfg.tls_verify,
-                )
-            logged_in.add(cfg.host)
-        for repo in registry.list_repositories(cfg.host):
-            repo_ref = f"{cfg.host}/{repo}"
+        ensure_registry_session(registry, cfg, logged_in)
+        for repo_ref in walk_repo_refs(registry, cfg):
             for tag in registry.list_tags(repo_ref):
                 image_ref = f"{repo_ref}:{tag}"
                 for ref in registry.list_referrers(image_ref, PENDING_DELETION_ARTIFACT_TYPE):
