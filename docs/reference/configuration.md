@@ -24,8 +24,8 @@ Each field is set as `KNOCK_<FIELD>` (the property name upper-cased). JSON-typed
 | `KNOCK_MAX_CONCURRENCY` | integer | `4` | Max parallel tag operations per run (`1` = sequential). |
 | `KNOCK_ATTEST_SIGNER` | string | `(empty)` | Signing mode for SLSA attestations on the rebuild path; empty ⇒ off. |
 | `KNOCK_ATTEST_KEY_REF` | string | `(empty)` | KMS URI (`kms`) or key path (`key`). |
-| `KNOCK_ATTEST_FULCIO_URL` | string | `(empty)` | Keyless CA URL; blank ⇒ public Fulcio. |
-| `KNOCK_ATTEST_REKOR_URL` | string | `(empty)` | Transparency-log URL; blank ⇒ no log entry. |
+| `KNOCK_ATTEST_FULCIO_URL` | string | `(empty)` | Keyless CA URL; blank ⇒ public Fulcio for `keyless`, no CA for `kms`/`key`. |
+| `KNOCK_ATTEST_REKOR_URL` | string | `(empty)` | Transparency-log URL; blank ⇒ public Rekor for `keyless`, no log for `kms`/`key`. |
 | `KNOCK_ATTEST_BUILDER_ID` | string | `(empty)` | URI identifying this knock builder. |
 | `KNOCK_ATTEST_VERIFY_IDENTITY` | string | `(empty)` | Keyless verify identity regexp (KNOCK_ATTEST_VERIFY_IDENTITY). |
 | `KNOCK_ATTEST_VERIFY_OIDC_ISSUER` | string | `(empty)` | Keyless verify OIDC issuer (KNOCK_ATTEST_VERIFY_OIDC_ISSUER). |
