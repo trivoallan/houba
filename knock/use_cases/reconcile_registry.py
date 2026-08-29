@@ -1,8 +1,10 @@
 """The registry-sourced reconcile path: plan a mirror from upstream tags, then apply it.
 
 Split out of `reconcile.py` so that file can be a driver over source classes rather than
-one path plus a filter. Nothing here changed in the move — this module is the image path
-exactly as it was, and any correction to it belongs in its own commit.
+one path plus a filter. The functions below are the image path exactly as it was — nothing
+in them changed in the move, and any correction to one belongs in its own commit. The
+`RegistryPlanner` at the end of the file is the later addition that puts them behind
+`PolicyPlanner`; its method bodies are those same loops, lifted.
 """
 
 from __future__ import annotations
@@ -11,27 +13,30 @@ import tempfile
 from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from knock.config import (
     CACertSource,
     PackageMirror,
     RegistryConfig,
+    match_registry_by_host,
     resolve_ca_certs,
     resolve_mirror,
+    resolve_registry,
 )
 from knock.domain.attestation import COSIGN_ATTESTATION_ARTIFACT_TYPE, build_transform_statement
+from knock.domain.collision import AliasTarget
 from knock.domain.deletion_mode import DeletionMode, resolve_deletion_mode
-from knock.domain.expand import ExpandedImport, VariantPlan
+from knock.domain.expand import ExpandedImport, VariantPlan, expand_import
 from knock.domain.lifecycle import (
     PENDING_DELETION_ARTIFACT_TYPE,
     build_pending_deletion_annotations,
     parse_pending_mark,
 )
 from knock.domain.mirror_policy import Archive, MirrorPolicy, RegistrySource, TransformStep
+from knock.domain.policy_merge import resolve_imports
 from knock.domain.reconcile import (
     MirrorArtifact,
     SourceArtifact,
@@ -43,14 +48,22 @@ from knock.domain.scan.refs import is_referrers_fallback_tag
 from knock.domain.stamp import build_stamp_annotations
 from knock.domain.transforms.base import ResolvedResource, ResolvedStep, ResourceRef
 from knock.domain.transforms.registry import DEFAULT_REGISTRY
-from knock.domain.transforms.render import render, transform_version
+from knock.domain.transforms.render import render, transform_version, validate_transform_steps
 from knock.errors import ConfigError, InternalError, exit_code_for
 from knock.ports.attestor import AttestorPort
 from knock.ports.image_builder import BuildRequest, ImageBuilderPort
 from knock.ports.registry import ImageInfo, Referrer, RegistryPort
 from knock.ports.reporter import Counts, ErrorInfo, OperationEvent, OperationKind, Reporter
 from knock.ports.sbom import SbomGeneratorPort
-from knock.use_cases.report import Operation, TargetReport, VariantReport
+from knock.use_cases.registry_session import ensure_registry_session
+from knock.use_cases.report import (
+    Operation,
+    PolicyReport,
+    TargetReport,
+    VariantReport,
+    merge_counts,
+    node_status,
+)
 
 BASE_DIGEST_KEY = "org.opencontainers.image.base.digest"
 CREATED_KEY = "org.opencontainers.image.created"
@@ -126,7 +139,7 @@ def _resolve_ref(
     raise InternalError(f"no resolver for resource kind {ref.kind!r}")
 
 
-def _resolve_transform(
+def resolve_transform(
     steps: list[TransformStep],
     ca_certs: dict[str, CACertSource],
     package_mirrors: dict[str, PackageMirror],
@@ -176,7 +189,7 @@ def _build_variant(
 
 
 @dataclass(frozen=True)
-class _Plan:
+class Plan:
     policy: MirrorPolicy
     expanded: ExpandedImport
     dest_repo: str
@@ -204,7 +217,7 @@ def _require_registry_source(policy: MirrorPolicy) -> RegistrySource:
     return s
 
 
-def _source_repo(policy: MirrorPolicy) -> str:
+def source_repo(policy: MirrorPolicy) -> str:
     s = _require_registry_source(policy)
     return f"{s.registry}/{s.repository}"
 
@@ -219,12 +232,6 @@ def _run_stage[T](
         return [fn(it) for it in items]
     futures = [executor.submit(fn, it) for it in items]
     return [f.result() for f in futures]
-
-
-def _node_status(operations: list[Operation]) -> Literal["ok", "partial", "failed"]:
-    if all(op.error is None for op in operations):
-        return "ok"
-    return "partial" if any(op.error is None for op in operations) else "failed"
 
 
 @dataclass(frozen=True)
@@ -283,22 +290,8 @@ def _counts_of(operations: list[Operation]) -> Counts:
     )
 
 
-def _merge_counts(parts: list[Counts]) -> Counts:
-    return Counts(
-        imported=sum(c.imported for c in parts),
-        updated=sum(c.updated for c in parts),
-        deleted=sum(c.deleted for c in parts),
-        aliased=sum(c.aliased for c in parts),
-        skipped=sum(c.skipped for c in parts),
-        marked=sum(c.marked for c in parts),
-        attested=sum(c.attested for c in parts),
-        sbom=sum(c.sbom for c in parts),
-        failed=sum(c.failed for c in parts),
-    )
-
-
-def _apply_plan(
-    plan: _Plan,
+def apply_plan(
+    plan: Plan,
     *,
     registry: RegistryPort,
     builder: ImageBuilderPort,
@@ -860,18 +853,191 @@ def _apply_plan(
             VariantReport(
                 name=vr.variant,
                 suffix=vplan.suffix,
-                status=_node_status(ops),
+                status=node_status(ops),
                 totals=_counts_of(ops),
                 operations=ops,
             )
         )
 
     target_ops_all = [op for v in variant_reports for op in v.operations] + lifecycle_ops
-    target_totals = _merge_counts([v.totals for v in variant_reports] + [_counts_of(lifecycle_ops)])
+    target_totals = merge_counts([v.totals for v in variant_reports] + [_counts_of(lifecycle_ops)])
     return TargetReport(
         dest_repo=plan.dest_repo,
-        status=_node_status(target_ops_all),
+        status=node_status(target_ops_all),
         variants=variant_reports,
         operations=lifecycle_ops,
         totals=target_totals,
     )
+
+
+@dataclass
+class RegistryPlanner:
+    """The registry-sourced planner: plan every policy it owns, then apply.
+
+    Satisfies `PolicyPlanner` structurally. The two method bodies are the plan and
+    apply loops `reconcile_policies` runs today, lifted verbatim.
+
+    The split of `reconcile_policies`' parameters follows the rule `PolicyPlanner`
+    states: what the DRIVER owns or shares across planners stays a method parameter
+    (`policies`, `reporter`, `executor`), and what only this planner needs is a
+    constructor field. So `reporter` and `executor` are parameters of `apply`, and
+    `max_concurrency` / `shard_index` / `shard_count` are not here at all — the
+    driver resolves them before dispatching.
+    """
+
+    registry: RegistryPort
+    builder: ImageBuilderPort
+    roster: dict[str, RegistryConfig]
+    ca_certs: dict[str, CACertSource]
+    package_mirrors: dict[str, PackageMirror]
+    build_platform: str
+    now: datetime
+    label_prefix: str
+    dry_run_tags: bool
+    dry_run_deletions: bool
+    deletion_mode: DeletionMode = DeletionMode.purge
+    work_dir: Path | None = None
+    attestor: AttestorPort | None = None
+    attest_builder_id: str = ""
+    sbom_generator: SbomGeneratorPort | None = None
+    sbom_formats: list[str] = field(default_factory=list)
+    retention_global: Archive | None = None
+    # A field rather than a local because `plan` and `apply` must share ONE session
+    # set: `plan` logs into the source registries, `apply` into the destinations, and
+    # a second set would re-login hosts already configured. Public so a driver can
+    # pass the SAME set to every planner — the git planner also takes `registry` +
+    # `roster`, and would otherwise re-login the very hosts this one just did.
+    logged_in: set[str] = field(default_factory=set)
+    # None until `plan` runs — see the guard in `apply`. `init=False` keeps it out of
+    # the constructor, `repr=False` out of every log line and exception repr (it holds
+    # each MirrorPolicy and RegistryConfig in the batch).
+    _plans: list[tuple[MirrorPolicy, list[Plan]]] | None = field(
+        default=None, init=False, repr=False
+    )
+
+    def handles(self, policy: MirrorPolicy) -> bool:
+        return isinstance(policy.spec.source, RegistrySource)
+
+    def plan(self, policies: list[MirrorPolicy]) -> list[AliasTarget]:
+        alias_entries: list[AliasTarget] = []
+        plans: list[tuple[MirrorPolicy, list[Plan]]] = []
+        for policy in policies:
+            # Configure the source registry's TLS/auth (from the roster) before listing its tags —
+            # a plain-HTTP or custom-CA source registry otherwise fails the plan-phase `tag ls`.
+            # Sources not in the roster (public upstreams like docker.io) keep ambient HTTPS config.
+            src_repo = source_repo(policy)
+            src_match = match_registry_by_host(src_repo, self.roster)
+            if src_match is not None:
+                ensure_registry_session(self.registry, src_match[1], self.logged_in)
+            # Drop the referrers-tag-schema fallbacks the same way (see the destination walk):
+            # a `sha256-<digest>` tag is a referrer manifest, never an image to mirror.
+            src_tags = [
+                t for t in self.registry.list_tags(src_repo) if not is_referrers_fallback_tag(t)
+            ]
+            policy_plans: list[Plan] = []
+            for resolved in resolve_imports(policy.spec):
+                expanded = expand_import(resolved, src_tags)
+                for v in expanded.variants:
+                    validate_transform_steps(v.transform)
+                transforms = {
+                    v.name: resolve_transform(v.transform, self.ca_certs, self.package_mirrors)
+                    for v in expanded.variants
+                    if v.transform
+                }
+                for dest in resolved.destinations or []:
+                    _name, cfg = resolve_registry(dest.registry, self.roster)
+                    dest_repo = f"{cfg.host}/{dest.project}/{dest.repository}"
+                    policy_plans.append(
+                        Plan(
+                            policy=policy,
+                            expanded=expanded,
+                            dest_repo=dest_repo,
+                            config=cfg,
+                            transforms=transforms,
+                        )
+                    )
+                    for variant in expanded.variants:
+                        for alias_name, target in variant.aliases.items():
+                            alias_entries.append(
+                                AliasTarget(
+                                    dest_repo=dest_repo,
+                                    alias=alias_name + variant.suffix,
+                                    target=target + variant.suffix,
+                                )
+                            )
+            plans.append((policy, policy_plans))
+        # Assign, never append: a second `plan` call replaces the batch rather than
+        # silently doubling the work a later `apply` would do.
+        self._plans = plans
+        return alias_entries
+
+    def apply(
+        self, *, reporter: Reporter, executor: ThreadPoolExecutor | None
+    ) -> list[PolicyReport]:
+        if self._plans is None:
+            # A driver that applies a batch it never planned would report a clean
+            # empty run — silently placing nothing. Loud instead.
+            raise InternalError("RegistryPlanner.apply called before plan")
+        policy_reports: list[PolicyReport] = []
+        for policy, policy_plans in self._plans:
+            source_ref = source_repo(policy)
+            reporter.policy_started(policy.metadata.name, source_ref)
+            try:
+                targets: list[TargetReport] = []
+                for plan in policy_plans:
+                    cfg = plan.config
+                    ensure_registry_session(self.registry, cfg, self.logged_in)
+                    targets.append(
+                        apply_plan(
+                            plan,
+                            registry=self.registry,
+                            builder=self.builder,
+                            label_prefix=self.label_prefix,
+                            build_platform=self.build_platform,
+                            work_dir=self.work_dir,
+                            now=self.now,
+                            dry_run_tags=self.dry_run_tags,
+                            dry_run_deletions=self.dry_run_deletions,
+                            deletion_mode=self.deletion_mode,
+                            reporter=reporter,
+                            policy_name=policy.metadata.name,
+                            executor=executor,
+                            attestor=self.attestor,
+                            attest_builder_id=self.attest_builder_id,
+                            sbom_generator=self.sbom_generator,
+                            sbom_formats=self.sbom_formats,
+                            retention_global=self.retention_global,
+                        )
+                    )
+                all_ops = [op for t in targets for v in t.variants for op in v.operations] + [
+                    op for t in targets for op in t.operations
+                ]
+                totals = merge_counts([t.totals for t in targets])
+                reporter.policy_completed(policy.metadata.name, totals)
+                policy_reports.append(
+                    PolicyReport(
+                        name=policy.metadata.name,
+                        source=source_ref,
+                        status=node_status(all_ops),
+                        error=None,
+                        totals=totals,
+                        targets=targets,
+                    )
+                )
+            except Exception as exc:
+                info = ErrorInfo(
+                    type=type(exc).__name__, message=str(exc), exit_code=exit_code_for(exc)
+                )
+                reporter.policy_failed(policy.metadata.name, info)
+                policy_reports.append(
+                    PolicyReport(
+                        name=policy.metadata.name,
+                        source=source_ref,
+                        status="failed",
+                        error=info,
+                        totals=Counts(),
+                        targets=[],
+                    )
+                )
+
+        return policy_reports

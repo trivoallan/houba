@@ -37,12 +37,10 @@ from knock.ports.registry import RegistryPort
 from knock.ports.reporter import Counts, ErrorInfo, Reporter
 from knock.ports.sbom import SbomGeneratorPort
 from knock.use_cases.reconcile_registry import (
-    _apply_plan,
-    _merge_counts,
-    _node_status,
-    _Plan,
-    _resolve_transform,
-    _source_repo,
+    Plan,
+    apply_plan,
+    resolve_transform,
+    source_repo,
 )
 from knock.use_cases.registry_session import ensure_registry_session
 from knock.use_cases.report import (
@@ -51,6 +49,8 @@ from knock.use_cases.report import (
     RunReport,
     RunStatus,
     TargetReport,
+    merge_counts,
+    node_status,
 )
 
 
@@ -138,7 +138,7 @@ def reconcile_policies(
     # Registry-sourced only past this point: this use case doesn't yet know how to
     # mirror a git source (skill is git-only; generic may be either — see
     # mirror_policy.py's asymmetric source/artifactType rule). Split those out BEFORE
-    # the plan phase touches `_source_repo`, so one git-sourced policy in the worklist
+    # the plan phase touches `source_repo`, so one git-sourced policy in the worklist
     # can't abort reconciliation for every other policy — it is reported as skipped
     # instead (see `_skipped_source_report`), and the rest proceed normally.
     unsupported_policies = [p for p in policies if not isinstance(p.spec.source, RegistrySource)]
@@ -147,27 +147,27 @@ def reconcile_policies(
     # --- Plan phase (fail-fast): expand, resolve destinations + transforms, collision-check.
     # Transform resolution (unknown cert/mirror names, unreadable cert files) surfaces all
     # config errors here, before ANY mutation. ---
-    plans_by_policy: list[tuple[MirrorPolicy, list[_Plan]]] = []
+    plans_by_policy: list[tuple[MirrorPolicy, list[Plan]]] = []
     alias_entries: list[AliasTarget] = []
     logged_in: set[str] = set()
     for policy in policies:
         # Configure the source registry's TLS/auth (from the roster) before listing its tags —
         # a plain-HTTP or custom-CA source registry otherwise fails the plan-phase `tag ls`.
         # Sources not in the roster (public upstreams like docker.io) keep ambient HTTPS config.
-        src_repo = _source_repo(policy)
+        src_repo = source_repo(policy)
         src_match = match_registry_by_host(src_repo, roster)
         if src_match is not None:
             ensure_registry_session(registry, src_match[1], logged_in)
         # Drop the referrers-tag-schema fallbacks the same way (see the destination walk):
         # a `sha256-<digest>` tag is a referrer manifest, never an image to mirror.
         src_tags = [t for t in registry.list_tags(src_repo) if not is_referrers_fallback_tag(t)]
-        policy_plans: list[_Plan] = []
+        policy_plans: list[Plan] = []
         for resolved in resolve_imports(policy.spec):
             expanded = expand_import(resolved, src_tags)
             for v in expanded.variants:
                 validate_transform_steps(v.transform)
             transforms = {
-                v.name: _resolve_transform(v.transform, ca_certs, package_mirrors)
+                v.name: resolve_transform(v.transform, ca_certs, package_mirrors)
                 for v in expanded.variants
                 if v.transform
             }
@@ -175,7 +175,7 @@ def reconcile_policies(
                 _name, cfg = resolve_registry(dest.registry, roster)
                 dest_repo = f"{cfg.host}/{dest.project}/{dest.repository}"
                 policy_plans.append(
-                    _Plan(
+                    Plan(
                         policy=policy,
                         expanded=expanded,
                         dest_repo=dest_repo,
@@ -207,7 +207,7 @@ def reconcile_policies(
             else None
         )
         for policy, policy_plans in plans_by_policy:
-            source_ref = _source_repo(policy)
+            source_ref = source_repo(policy)
             reporter.policy_started(policy.metadata.name, source_ref)
             try:
                 targets: list[TargetReport] = []
@@ -215,7 +215,7 @@ def reconcile_policies(
                     cfg = plan.config
                     ensure_registry_session(registry, cfg, logged_in)
                     targets.append(
-                        _apply_plan(
+                        apply_plan(
                             plan,
                             registry=registry,
                             builder=builder,
@@ -239,13 +239,13 @@ def reconcile_policies(
                 all_ops = [op for t in targets for v in t.variants for op in v.operations] + [
                     op for t in targets for op in t.operations
                 ]
-                totals = _merge_counts([t.totals for t in targets])
+                totals = merge_counts([t.totals for t in targets])
                 reporter.policy_completed(policy.metadata.name, totals)
                 policy_reports.append(
                     PolicyReport(
                         name=policy.metadata.name,
                         source=source_ref,
-                        status=_node_status(all_ops),
+                        status=node_status(all_ops),
                         error=None,
                         totals=totals,
                         targets=targets,
@@ -277,7 +277,7 @@ def reconcile_policies(
     report = RunReport(
         mode=mode,
         status=status,
-        totals=_merge_counts([p.totals for p in policy_reports]),
+        totals=merge_counts([p.totals for p in policy_reports]),
         policies=policy_reports,
     )
     reporter.run_completed(report)
