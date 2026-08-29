@@ -103,10 +103,13 @@ graph LR
     206-. "<div>Syncs the buildkitd app</div><div style='font-size: 70%'>[ArgoCD]</div>" .->213
     224-. "<div>Reads knock/registries</div><div style='font-size: 70%'>[vault API]</div>" .->226
     215-. "<div>Requests the roster Secret</div><div style='font-size: 70%'>[ESO]</div>" .->224
+    210-. "<div>Reads the registry roster</div><div style='font-size: 70%'>[env (secretRef)]</div>" .->215
     211-. "<div>Pulls policies</div><div style='font-size: 70%'>[git]</div>" .->203
     216-. "<div>Reads provenance stamps</div><div style='font-size: 70%'>[regctl]</div>" .->228
     220-. "<div>Fetches the SBOM referrer;<br />attaches grype's SARIF</div><div style='font-size: 70%'>[regctl]</div>" .->228
     216-. "<div>Lists pods, joins digest -><br />cluster (kube API)</div><div style='font-size: 70%'>[kubectl / kube API]</div>" .->222
     217-. "<div>Collects superseded scan<br />referrers</div><div style='font-size: 70%'>[regctl]</div>" .->228
+    219-. "<div>Fetches the CycloneDX SBOM<br />referrer</div><div style='font-size: 70%'>[regctl]</div>" .->228
+    219-. "<div>Uploads the SBOM</div><div style='font-size: 70%'>[Dependency-Track API]</div>" .->218
 
   end

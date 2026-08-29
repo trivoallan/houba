@@ -9,7 +9,7 @@ graph LR
     2["<div style='font-weight: bold'>Product / Application Team</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Declares its imports as<br />MirrorPolicy files and<br />consumes the hardened,<br />stamped images.</div>"]
     style 2 fill:#52606d,stroke:#39434c,color:#ffffff
 
-    58("<div style='font-weight: bold'>Redis (Streams)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Message broker for the scan<br />pipeline: reconcile enqueues<br />placed-image digests; scan<br />workers claim reservations<br />via XAUTOCLAIM (consumer<br />groups). Optional — only<br />required when the knock-oci[scan]<br />extra is installed.</div>")
+    58("<div style='font-weight: bold'>Redis (Streams)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Message broker for the scan<br />pipeline: reconcile enqueues<br />placed-image digests; scan<br />workers claim reservations<br />via XAUTOCLAIM (consumer<br />groups). Optional — only<br />required when the<br />knock-oci[scan] extra is<br />installed.</div>")
     style 58 fill:#69707a,stroke:#494e55,color:#ffffff
     59("<div style='font-weight: bold'>Source Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External public OCI<br />registries (Docker Hub, Quay,<br />GHCR) the images originate<br />from.</div>")
     style 59 fill:#69707a,stroke:#494e55,color:#ffffff
@@ -49,7 +49,7 @@ graph LR
           style 49 fill:#fed7aa,stroke:#b19676,color:#4a1b0c
           50("<div style='font-weight: bold'>SyftAdapter</div><div style='font-size: 70%; margin-top: 0px'>[Component: syft]</div><div style='font-size: 80%; margin-top:10px'>Drives the syft CLI via<br />subprocess; config-file<br />auth/TLS; lazy binary<br />resolution.</div>")
           style 50 fill:#fed7aa,stroke:#b19676,color:#4a1b0c
-          51("<div style='font-weight: bold'>RedisStreamsAdapter</div><div style='font-size: 70%; margin-top: 0px'>[Component: redis-py 8]</div><div style='font-size: 80%; margin-top:10px'>Drives redis-py 8 Streams<br />(XADD / XAUTOCLAIM / XACK /<br />XTRIM); consumer-group<br />semantics; RESP3. Part of the<br />knock-oci[scan] optional extra.</div>")
+          51("<div style='font-weight: bold'>RedisStreamsAdapter</div><div style='font-size: 70%; margin-top: 0px'>[Component: redis-py 8]</div><div style='font-size: 80%; margin-top:10px'>Drives redis-py 8 Streams<br />(XADD / XAUTOCLAIM / XACK /<br />XTRIM); consumer-group<br />semantics; RESP3. Part of the<br />knock-oci[scan] optional<br />extra.</div>")
           style 51 fill:#fed7aa,stroke:#b19676,color:#4a1b0c
         end
 
@@ -62,7 +62,7 @@ graph LR
           style 11 fill:#cdd5df,stroke:#8f959c,color:#1f2933
           12("<div style='font-weight: bold'>verify</div><div style='font-size: 70%; margin-top: 0px'>[Component: Typer]</div><div style='font-size: 80%; margin-top:10px'>The verify command: reads<br />knock's facts for a digest<br />(signed scan attestation,<br />stamp, SBOM referrer) and<br />produces a single exit-0/1<br />gate verdict.</div>")
           style 12 fill:#cdd5df,stroke:#8f959c,color:#1f2933
-          13("<div style='font-weight: bold'>scan</div><div style='font-size: 70%; margin-top: 0px'>[Component: Typer]</div><div style='font-size: 80%; margin-top:10px'>The scan command group<br />(knock-oci[scan] optional extra):<br />reserve, attach, enqueue,<br />reaper sub-commands for the<br />incremental scan pipeline.</div>")
+          13("<div style='font-weight: bold'>scan</div><div style='font-size: 70%; margin-top: 0px'>[Component: Typer]</div><div style='font-size: 80%; margin-top:10px'>The scan command group<br />(knock-oci[scan] optional<br />extra): reserve, attach,<br />enqueue, reaper sub-commands<br />for the incremental scan<br />pipeline.</div>")
           style 13 fill:#cdd5df,stroke:#8f959c,color:#1f2933
           14("<div style='font-weight: bold'>render</div><div style='font-size: 70%; margin-top: 0px'>[Component: Python]</div><div style='font-size: 80%; margin-top:10px'>Formats the RunReport to<br />stdout (text / JSON).</div>")
           style 14 fill:#cdd5df,stroke:#8f959c,color:#1f2933
