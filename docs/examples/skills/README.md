@@ -14,23 +14,67 @@ The numbers below are measured against that tree, not asserted: `plan_archive` o
 bound**, with no symlink, no escape and no collision, and the root `SKILL.md` satisfying the layout
 check.
 
-## Not yet runnable, and the example says so
+## Running it
 
-Every piece exists and is tested: the packaging planner, the reproducible zip writer, the git
-adapter, `put_artifact`, the source-derived stamp, and the composition in `use_cases/intake.py`.
-**What is missing is the CLI verb** that runs them in production.
-
-So this example documents the design and does not yet execute. Pointing `knock reconcile` at this
-directory produces an explicit failure rather than a silent no-op:
-
-```
-policy 'mcp-builder' is git-sourced; not handled by reconcile
+```bash
+knock reconcile docs/examples/skills --dry-run   # the plan, with no clone and no push
+knock reconcile docs/examples/skills
 ```
 
-`UnsupportedSourceError` (a `DomainError`, exit 1), reported with `status=failed` while every
-registry-sourced policy in the same run reconciles normally. A team adopting a skill policy before
-the verb lands gets a red scheduled run, which is the point: the alternative is a green run that
-mirrored nothing.
+It needs `git` on `PATH` and a non-empty `KNOCK_LABEL_PREFIX` (see *What gets stamped* below). A
+skill policy sits in the same directory as an image policy and reconciles in the same run.
+
+## Two tags per placement, and why convergence is a conjunction
+
+A git source has no tag list to compare against — one ref, resolving to one commit. So the
+destination carries **two** tags for each placement:
+
+| Tag | Kind | Holds |
+|---|---|---|
+| `sha-<revision>` | **immutable** — written once, never moved, never deleted | the artifact built from exactly that commit |
+| the ref name (`main`, `v1.2.0`, …) | a **moving alias**, copied onto the revision tag | whatever revision the policy currently declares |
+
+Convergence is therefore *the revision is placed **and** the alias designates it* — not just the
+first half. The plan phase reads both cheaply: `SourcePort.resolve` (`git ls-remote`, no clone) for
+the revision, `list_tags` on the destination for what is already there, and — only when the revision
+is already placed, where it can still change the outcome — one `get_annotations` on the alias, whose
+`org.opencontainers.image.revision` names the revision it points at.
+
+That gives four behaviours, all of them observable:
+
+| Situation | What a run does |
+|---|---|
+| **First run** | Fetches, packages, pushes to `sha-<revision>`, then copies that onto the ref-name alias. `imported` + `aliased` |
+| **Second run, unchanged upstream** | Nothing at all — no fetch, no push, not even a re-point. `skipped` |
+| **The ref moved forward** | Places a **new** `sha-<revision>` tag and repoints the alias onto it. The old revision tag stays exactly where it was |
+| **The ref moved backwards** (a revert, a force-push, a release branch reset) | The revision is already placed, so nothing is fetched or pushed; the alias is repointed onto the tag already there. `aliased` alone |
+
+The last row is why the second half of the condition is load-bearing. A planner that stopped at "is
+`sha-<revision>` present?" would answer yes and report `skipped`, while whoever installs by ref name
+keeps getting the revision the policy has since abandoned — a silent disagreement between the
+stamped facts and the policy, in the one product whose claim is that those facts can be trusted.
+
+An alias carrying no revision annotation — placed by hand, or by something that is not knock — reads
+as stale and is repointed onto what the policy declares. That is self-healing: the copy puts the
+stamped manifest there, so the next run reads it and skips.
+
+**A ref that moves *during* a run is refused, not placed.** The plan resolves once and derives
+`sha-<revision>` from the answer; if the fetch then lands on a different commit, the placement is
+abandoned before anything is stamped or pushed (`SourceRevisionMismatchError`, exit 2), and the next
+run converges on the ref's new tip. An immutable tag holding a different revision would be exactly
+the lie the stamp exists to prevent.
+
+## Revision tags accumulate, and that is the design
+
+Skills are **never deleted** — `archive` and `deletionMode` are refused on a skill policy rather
+than ignored. So every revision a policy has ever placed stays in the destination repository
+forever, and a long-lived policy on a busy branch accumulates one tag per placement.
+
+This is deliberate. The soft-delete pipeline asks a usage oracle "is this still running in
+production"; a skill is installed on *workstations*, where the oracle has no answer, and pruning a
+revision someone pinned breaks their install with no warning. Whoever pinned `sha-<revision>` keeps
+resolving it. Budget registry storage accordingly; a skill archive is small (this one is 121,756
+bytes) but the tag list is unbounded.
 
 ## What the policy has to say, and what it must not
 
@@ -39,6 +83,7 @@ mirrored nothing.
 | `artifactType: skill` **requires** a git source | Enforced in the schema. `image` and `helmChart` are the mirror rule — registry only. `generic` deliberately accepts either, so a later artifact class can be git-sourced without a schema change |
 | `tags: {}` is required and **read by nothing** | Selection for a git source is the `ref`, not a tag regex. The empty mapping is the honest spelling — a regex here would look like it selects something |
 | **No `transform:`**, anywhere in the policy | A skill is placed as published. There is no base image to re-root onto, so hardening has nothing to act on; declaring a step is a validation error, not a silent no-op |
+| **No `archive:` and no `deletionMode:`** | Skills are never deleted — see above. Refused rather than ignored, for the same reason as `transform`: an author who declares retention believes their policy prunes, and it never will |
 | `path:` is optional, and does real work here | It re-roots the tree onto `skills/mcp-builder`, so one skill is placed rather than the whole 4.3 MiB monorepo. The layout check then runs against the *re-rooted* tree — which is why the sub-directory's own `SKILL.md` is what satisfies it |
 | `ref:` may be a branch, a tag, or a commit | All three resolve to an immutable sha before anything is packaged, and the resolved value is what is stamped. The example pins a commit because a provenance product should show the immutable case |
 
@@ -87,5 +132,6 @@ URL and can embed a credential.
 
 ## Related
 
-- [`docs/architecture/decisions/0048-non-registry-sources-and-the-skill-artifact-class.md`](../../architecture/decisions/0048-non-registry-sources-and-the-skill-artifact-class.md) — the ADR, including the deferred work
+- [ADR 0048 — Non-registry sources and the skill artifact class](../../architecture/decisions/0048-non-registry-sources-and-the-skill-artifact-class.md) — the intake path itself
+- [ADR 0049 — Reconciling git sources](../../architecture/decisions/0049-reconciling-git-sources.md) — the tag scheme and convergence rules above
 - [`docs/examples/reference/`](../reference/) — the registry-sourced equivalents

@@ -4,112 +4,112 @@ graph LR
   subgraph diagram ["Deployment View: knock - Greenfield — full GitOps platform (Reference B, advanced)"]
     style diagram fill:#ffffff,stroke:#ffffff
 
-    subgraph 201 ["Git host"]
-      style 201 fill:#ffffff,stroke:#444444,color:#ffffff
+    subgraph 234 ["Git host"]
+      style 234 fill:#ffffff,stroke:#444444,color:#ffffff
 
-      202("<div style='font-weight: bold'>Manifests repo</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: git / GitOps]</div><div style='font-size: 80%; margin-top:10px'>root.yaml + apps/ + sources/*<br />— a merged PR is the front<br />door</div>")
-      style 202 fill:#8a94a0,stroke:#606770,color:#ffffff
-      203("<div style='font-weight: bold'>Policy repo (org)</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: git / GitOps]</div><div style='font-size: 80%; margin-top:10px'>POLICY_REPO_URL — git-sync<br />clones it;<br />POLICY_DIR=docs/examples/reference<br />(busybox copy + debian<br />rebuild). ArgoCD never<br />touches policies.</div>")
-      style 203 fill:#8a94a0,stroke:#606770,color:#ffffff
+      235("<div style='font-weight: bold'>Manifests repo</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: git / GitOps]</div><div style='font-size: 80%; margin-top:10px'>root.yaml + apps/ + sources/*<br />— a merged PR is the front<br />door</div>")
+      style 235 fill:#8a94a0,stroke:#606770,color:#ffffff
+      236("<div style='font-weight: bold'>Policy repo (org)</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: git / GitOps]</div><div style='font-size: 80%; margin-top:10px'>POLICY_REPO_URL — git-sync<br />clones it;<br />POLICY_DIR=docs/examples/reference<br />(busybox copy + debian<br />rebuild). ArgoCD never<br />touches policies.</div>")
+      style 236 fill:#8a94a0,stroke:#606770,color:#ffffff
     end
 
-    subgraph 204 ["Kubernetes cluster"]
-      style 204 fill:#ffffff,stroke:#444444,color:#ffffff
+    subgraph 237 ["Kubernetes cluster"]
+      style 237 fill:#ffffff,stroke:#444444,color:#ffffff
 
-      subgraph 205 ["namespace: argocd"]
-        style 205 fill:#ffffff,stroke:#444444,color:#ffffff
+      subgraph 238 ["namespace: argocd"]
+        style 238 fill:#ffffff,stroke:#444444,color:#ffffff
 
-        206("<div style='font-weight: bold'>Application: knock-root</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: ArgoCD]</div><div style='font-size: 80%; margin-top:10px'>App-of-Apps; syncs the apps/<br />children from git (no<br />demo/prod split)</div>")
-        style 206 fill:#8a94a0,stroke:#606770,color:#ffffff
-        207("<div style='font-weight: bold'>ArgoCD</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>GitOps controller: the<br />App-of-Apps that syncs the<br />knock install from git. This<br />IS the reference deployment —<br />and the demo on kind. The<br />kubectl apply -k<br />overlays/local path is the<br />inner-loop escape hatch, not<br />a separate blueprint.</div>")
-        style 207 fill:#69707a,stroke:#494e55,color:#ffffff
+        239("<div style='font-weight: bold'>Application: knock-root</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: ArgoCD]</div><div style='font-size: 80%; margin-top:10px'>App-of-Apps; syncs the apps/<br />children from git (no<br />demo/prod split)</div>")
+        style 239 fill:#8a94a0,stroke:#606770,color:#ffffff
+        240("<div style='font-weight: bold'>ArgoCD</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>GitOps controller: the<br />App-of-Apps that syncs the<br />knock install from git. This<br />IS the reference deployment —<br />and the demo on kind. The<br />kubectl apply -k<br />overlays/local path is the<br />inner-loop escape hatch, not<br />a separate blueprint.</div>")
+        style 240 fill:#69707a,stroke:#494e55,color:#ffffff
       end
 
-      subgraph 208 ["namespace: knock"]
-        style 208 fill:#ffffff,stroke:#444444,color:#ffffff
+      subgraph 241 ["namespace: knock"]
+        style 241 fill:#ffffff,stroke:#444444,color:#ffffff
 
-        subgraph 209 ["CronJob: knock-reconcile"]
-          style 209 fill:#ffffff,stroke:#444444,color:#ffffff
+        subgraph 242 ["CronJob: knock-reconcile"]
+          style 242 fill:#ffffff,stroke:#444444,color:#ffffff
 
-          210("<div style='font-weight: bold'>knock CLI</div><div style='font-size: 70%; margin-top: 0px'>[Container: Python · Typer]</div><div style='font-size: 80%; margin-top:10px'>Reconcile engine: loads<br />MirrorPolicy files, mirrors<br />or rebuilds images and stamps<br />them with provenance. Runs as<br />a CLI / Job; the runtime<br />image bundles regctl +<br />buildctl.</div>")
-          style 210 fill:#2563c9,stroke:#19458c,color:#ffffff
-          211("<div style='font-weight: bold'>git-sync sidecar</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: git-sync]</div><div style='font-size: 80%; margin-top:10px'>Clones the policy repo into<br />/policies</div>")
-          style 211 fill:#8a94a0,stroke:#606770,color:#ffffff
+          243("<div style='font-weight: bold'>knock CLI</div><div style='font-size: 70%; margin-top: 0px'>[Container: Python · Typer]</div><div style='font-size: 80%; margin-top:10px'>Reconcile engine: loads<br />MirrorPolicy files, mirrors<br />or rebuilds images and stamps<br />them with provenance. Runs as<br />a CLI / Job; the runtime<br />image bundles regctl +<br />buildctl.</div>")
+          style 243 fill:#2563c9,stroke:#19458c,color:#ffffff
+          244("<div style='font-weight: bold'>git-sync sidecar</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: git-sync]</div><div style='font-size: 80%; margin-top:10px'>Clones the policy repo into<br />/policies</div>")
+          style 244 fill:#8a94a0,stroke:#606770,color:#ffffff
         end
 
-        subgraph 212 ["Deployment: buildkitd (own app)"]
-          style 212 fill:#ffffff,stroke:#444444,color:#ffffff
+        subgraph 245 ["Deployment: buildkitd (own app)"]
+          style 245 fill:#ffffff,stroke:#444444,color:#ffffff
 
-          213("<div style='font-weight: bold'>BuildKit</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OCI build engine knock drives<br />to rebuild and harden images.</div>")
-          style 213 fill:#69707a,stroke:#494e55,color:#ffffff
+          246("<div style='font-weight: bold'>BuildKit</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OCI build engine knock drives<br />to rebuild and harden images.</div>")
+          style 246 fill:#69707a,stroke:#494e55,color:#ffffff
         end
 
-        215("<div style='font-weight: bold'>ExternalSecret + ClusterSecretStore</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: ExternalSecret]</div><div style='font-size: 80%; margin-top:10px'>knock-secret-store → OpenBao<br />(ESO vault provider)</div>")
-        style 215 fill:#8a94a0,stroke:#606770,color:#ffffff
-        216("<div style='font-weight: bold'>Job: blast-radius</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: regctl]</div><div style='font-size: 80%; margin-top:10px'>BLAST_REPOS=demo/busybox<br />demo/debian — reads stamps,<br />answers the CVE-time query</div>")
-        style 216 fill:#8a94a0,stroke:#606770,color:#ffffff
-        217("<div style='font-weight: bold'>CronJob: knock-gc</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes CronJob]</div><div style='font-size: 80%; margin-top:10px'>Weekly knock gc --apply —<br />collects superseded scan<br />referrers<br />(keep=2/older-than=30d). No<br />git-sync/policies; walks the<br />roster only.</div>")
-        style 217 fill:#8a94a0,stroke:#606770,color:#ffffff
-        218("<div style='font-weight: bold'>Deployment: dependency-track (own app)</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes Deployment]</div><div style='font-size: 80%; margin-top:10px'>Worked-example SBOM consumer<br />(apiserver + frontend,<br />embedded H2) — its own ArgoCD<br />Application (ADR 0035).<br />Currency layer: package-level<br />blast-radius. Fed the<br />CycloneDX SBOM referrer knock<br />attaches<br />(KNOCK_SBOM_FORMATS),<br />uploaded by publish-sbom.</div>")
-        style 218 fill:#8a94a0,stroke:#606770,color:#ffffff
-        219("<div style='font-weight: bold'>Job: knock-publish-sbom</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes Job]</div><div style='font-size: 80%; margin-top:10px'>Fetches the CycloneDX SBOM<br />referrer knock attaches to<br />each placed image and uploads<br />it to DT. regctl + python, no<br />conversion. Twin of the<br />blast-radius consumer.</div>")
-        style 219 fill:#8a94a0,stroke:#606770,color:#ffffff
-        220("<div style='font-weight: bold'>Job: knock-scan-attach</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes Job]</div><div style='font-size: 80%; margin-top:10px'>Off-the-shelf grype evaluates<br />the SBOM referrer knock<br />attached (grype sbom:, no<br />registry creds); knock attach<br />binds the SARIF as a signed<br />referrer on the same digest.<br />regctl + grype + knock, no<br />derived image. grype pulls<br />its CVE DB from the internet<br />(air-gapped => mirror).</div>")
-        style 220 fill:#8a94a0,stroke:#606770,color:#ffffff
-        subgraph 221 ["marked workloads (team-a/b/c)"]
-          style 221 fill:#ffffff,stroke:#444444,color:#ffffff
+        248("<div style='font-weight: bold'>ExternalSecret + ClusterSecretStore</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: ExternalSecret]</div><div style='font-size: 80%; margin-top:10px'>knock-secret-store → OpenBao<br />(ESO vault provider)</div>")
+        style 248 fill:#8a94a0,stroke:#606770,color:#ffffff
+        249("<div style='font-weight: bold'>Job: blast-radius</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: regctl]</div><div style='font-size: 80%; margin-top:10px'>BLAST_REPOS=demo/busybox<br />demo/debian — reads stamps,<br />answers the CVE-time query</div>")
+        style 249 fill:#8a94a0,stroke:#606770,color:#ffffff
+        250("<div style='font-weight: bold'>CronJob: knock-gc</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes CronJob]</div><div style='font-size: 80%; margin-top:10px'>Weekly knock gc --apply —<br />collects superseded scan<br />referrers<br />(keep=2/older-than=30d). No<br />git-sync/policies; walks the<br />roster only.</div>")
+        style 250 fill:#8a94a0,stroke:#606770,color:#ffffff
+        251("<div style='font-weight: bold'>Deployment: dependency-track (own app)</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes Deployment]</div><div style='font-size: 80%; margin-top:10px'>Worked-example SBOM consumer<br />(apiserver + frontend,<br />embedded H2) — its own ArgoCD<br />Application (ADR 0035).<br />Currency layer: package-level<br />blast-radius. Fed the<br />CycloneDX SBOM referrer knock<br />attaches<br />(KNOCK_SBOM_FORMATS),<br />uploaded by publish-sbom.</div>")
+        style 251 fill:#8a94a0,stroke:#606770,color:#ffffff
+        252("<div style='font-weight: bold'>Job: knock-publish-sbom</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes Job]</div><div style='font-size: 80%; margin-top:10px'>Fetches the CycloneDX SBOM<br />referrer knock attaches to<br />each placed image and uploads<br />it to DT. regctl + python, no<br />conversion. Twin of the<br />blast-radius consumer.</div>")
+        style 252 fill:#8a94a0,stroke:#606770,color:#ffffff
+        253("<div style='font-weight: bold'>Job: knock-scan-attach</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes Job]</div><div style='font-size: 80%; margin-top:10px'>Off-the-shelf grype evaluates<br />the SBOM referrer knock<br />attached (grype sbom:, no<br />registry creds); knock attach<br />binds the SARIF as a signed<br />referrer on the same digest.<br />regctl + grype + knock, no<br />derived image. grype pulls<br />its CVE DB from the internet<br />(air-gapped => mirror).</div>")
+        style 253 fill:#8a94a0,stroke:#606770,color:#ffffff
+        subgraph 254 ["marked workloads (team-a/b/c)"]
+          style 254 fill:#ffffff,stroke:#444444,color:#ffffff
 
-          222("<div style='font-weight: bold'>pause pods</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes Pod]</div><div style='font-size: 80%; margin-top:10px'>One pod per namespace<br />(team-a/b/c), annotated with<br />the placed/bypass digest;<br />queried by blast-radius via<br />kube API.</div>")
-          style 222 fill:#8a94a0,stroke:#606770,color:#ffffff
+          255("<div style='font-weight: bold'>pause pods</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: Kubernetes Pod]</div><div style='font-size: 80%; margin-top:10px'>One pod per namespace<br />(team-a/b/c), annotated with<br />the placed/bypass digest;<br />queried by blast-radius via<br />kube API.</div>")
+          style 255 fill:#8a94a0,stroke:#606770,color:#ffffff
         end
 
       end
 
-      subgraph 223 ["namespace: external-secrets"]
-        style 223 fill:#ffffff,stroke:#444444,color:#ffffff
+      subgraph 256 ["namespace: external-secrets"]
+        style 256 fill:#ffffff,stroke:#444444,color:#ffffff
 
-        224("<div style='font-weight: bold'>External Secrets Operator</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: ESO]</div><div style='font-size: 80%; margin-top:10px'>Helm child; materializes the<br />registry roster Secret</div>")
-        style 224 fill:#8a94a0,stroke:#606770,color:#ffffff
+        257("<div style='font-weight: bold'>External Secrets Operator</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: ESO]</div><div style='font-size: 80%; margin-top:10px'>Helm child; materializes the<br />registry roster Secret</div>")
+        style 257 fill:#8a94a0,stroke:#606770,color:#ffffff
       end
 
-      subgraph 225 ["namespace: openbao"]
-        style 225 fill:#ffffff,stroke:#444444,color:#ffffff
+      subgraph 258 ["namespace: openbao"]
+        style 258 fill:#ffffff,stroke:#444444,color:#ffffff
 
-        226("<div style='font-weight: bold'>OpenBao</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: OpenBao]</div><div style='font-size: 80%; margin-top:10px'>Helm child (dev mode on<br />kind); holds knock/registries</div>")
-        style 226 fill:#8a94a0,stroke:#606770,color:#ffffff
+        259("<div style='font-weight: bold'>OpenBao</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: OpenBao]</div><div style='font-size: 80%; margin-top:10px'>Helm child (dev mode on<br />kind); holds knock/registries</div>")
+        style 259 fill:#8a94a0,stroke:#606770,color:#ffffff
       end
 
-      subgraph 227 ["namespace: registry"]
-        style 227 fill:#ffffff,stroke:#444444,color:#ffffff
+      subgraph 260 ["namespace: registry"]
+        style 260 fill:#ffffff,stroke:#444444,color:#ffffff
 
-        228("<div style='font-weight: bold'>Destination Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>The organization's private<br />OCI registries — any<br />dist-spec registry (Harbor,<br />Zot, …); destination for the<br />stamped images, addressed<br />generically via regctl.</div>")
-        style 228 fill:#69707a,stroke:#494e55,color:#ffffff
+        261("<div style='font-weight: bold'>Destination Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>The organization's private<br />OCI registries — any<br />dist-spec registry (Harbor,<br />Zot, …); destination for the<br />stamped images, addressed<br />generically via regctl.</div>")
+        style 261 fill:#69707a,stroke:#494e55,color:#ffffff
       end
 
     end
 
-    subgraph 230 ["Internet / org network"]
-      style 230 fill:#ffffff,stroke:#444444,color:#ffffff
+    subgraph 263 ["Internet / org network"]
+      style 263 fill:#ffffff,stroke:#444444,color:#ffffff
 
-      231("<div style='font-weight: bold'>Source Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External public OCI<br />registries (Docker Hub, Quay,<br />GHCR) the images originate<br />from.</div>")
-      style 231 fill:#69707a,stroke:#494e55,color:#ffffff
+      264("<div style='font-weight: bold'>Source Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External public OCI<br />registries (Docker Hub, Quay,<br />GHCR) the images originate<br />from.</div>")
+      style 264 fill:#69707a,stroke:#494e55,color:#ffffff
     end
 
-    210-. "<div>Submits the hardening rebuild<br />(internal CA trust, package<br />mirror)</div><div style='font-size: 70%'>[buildctl]</div>" .->213
-    210-. "<div>Reads mirror state; copies,<br />stamps, retags, deletes</div><div style='font-size: 70%'>[regctl (dist-spec)]</div>" .->228
-    210-. "<div>Lists tags, inspects digests,<br />copies images</div><div style='font-size: 70%'>[regctl]</div>" .->231
-    207-. "<div>Pulls manifests (App-of-Apps)</div><div style='font-size: 70%'>[git]</div>" .->202
-    206-. "<div>Syncs the knock install</div><div style='font-size: 70%'>[ArgoCD]</div>" .->210
-    206-. "<div>Syncs the buildkitd app</div><div style='font-size: 70%'>[ArgoCD]</div>" .->213
-    224-. "<div>Reads knock/registries</div><div style='font-size: 70%'>[vault API]</div>" .->226
-    215-. "<div>Requests the roster Secret</div><div style='font-size: 70%'>[ESO]</div>" .->224
-    210-. "<div>Reads the registry roster</div><div style='font-size: 70%'>[env (secretRef)]</div>" .->215
-    211-. "<div>Pulls policies</div><div style='font-size: 70%'>[git]</div>" .->203
-    216-. "<div>Reads provenance stamps</div><div style='font-size: 70%'>[regctl]</div>" .->228
-    220-. "<div>Fetches the SBOM referrer;<br />attaches grype's SARIF</div><div style='font-size: 70%'>[regctl]</div>" .->228
-    216-. "<div>Lists pods, joins digest -><br />cluster (kube API)</div><div style='font-size: 70%'>[kubectl / kube API]</div>" .->222
-    217-. "<div>Collects superseded scan<br />referrers</div><div style='font-size: 70%'>[regctl]</div>" .->228
-    219-. "<div>Fetches the CycloneDX SBOM<br />referrer</div><div style='font-size: 70%'>[regctl]</div>" .->228
-    219-. "<div>Uploads the SBOM</div><div style='font-size: 70%'>[Dependency-Track API]</div>" .->218
+    243-. "<div>Submits the hardening rebuild<br />(internal CA trust, package<br />mirror)</div><div style='font-size: 70%'>[buildctl]</div>" .->246
+    243-. "<div>Reads mirror state; copies,<br />stamps, retags, deletes</div><div style='font-size: 70%'>[regctl (dist-spec)]</div>" .->261
+    243-. "<div>Lists tags, inspects digests,<br />copies images</div><div style='font-size: 70%'>[regctl]</div>" .->264
+    240-. "<div>Pulls manifests (App-of-Apps)</div><div style='font-size: 70%'>[git]</div>" .->235
+    239-. "<div>Syncs the knock install</div><div style='font-size: 70%'>[ArgoCD]</div>" .->243
+    239-. "<div>Syncs the buildkitd app</div><div style='font-size: 70%'>[ArgoCD]</div>" .->246
+    257-. "<div>Reads knock/registries</div><div style='font-size: 70%'>[vault API]</div>" .->259
+    248-. "<div>Requests the roster Secret</div><div style='font-size: 70%'>[ESO]</div>" .->257
+    243-. "<div>Reads the registry roster</div><div style='font-size: 70%'>[env (secretRef)]</div>" .->248
+    244-. "<div>Pulls policies</div><div style='font-size: 70%'>[git]</div>" .->236
+    249-. "<div>Reads provenance stamps</div><div style='font-size: 70%'>[regctl]</div>" .->261
+    253-. "<div>Fetches the SBOM referrer;<br />attaches grype's SARIF</div><div style='font-size: 70%'>[regctl]</div>" .->261
+    249-. "<div>Lists pods, joins digest -><br />cluster (kube API)</div><div style='font-size: 70%'>[kubectl / kube API]</div>" .->255
+    250-. "<div>Collects superseded scan<br />referrers</div><div style='font-size: 70%'>[regctl]</div>" .->261
+    252-. "<div>Fetches the CycloneDX SBOM<br />referrer</div><div style='font-size: 70%'>[regctl]</div>" .->261
+    252-. "<div>Uploads the SBOM</div><div style='font-size: 70%'>[Dependency-Track API]</div>" .->251
 
   end

@@ -10,36 +10,39 @@ graph LR
     style 2 fill:#52606d,stroke:#39434c,color:#ffffff
     4("<div style='font-weight: bold'>knock</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Single front door / stamper:<br />mirrors external container<br />images, optionally rebuilds<br />them through a hardening<br />policy, and stamps them with<br />standardized, portable<br />provenance.</div>")
     style 4 fill:#1f6feb,stroke:#154da4,color:#ffffff
-    58("<div style='font-weight: bold'>Redis (Streams)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Message broker for the scan<br />pipeline: reconcile enqueues<br />placed-image digests; scan<br />workers claim reservations<br />via XAUTOCLAIM (consumer<br />groups). Optional — only<br />required when the<br />knock-oci[scan] extra is<br />installed.</div>")
-    style 58 fill:#69707a,stroke:#494e55,color:#ffffff
-    59("<div style='font-weight: bold'>Source Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External public OCI<br />registries (Docker Hub, Quay,<br />GHCR) the images originate<br />from.</div>")
-    style 59 fill:#69707a,stroke:#494e55,color:#ffffff
-    60("<div style='font-weight: bold'>Destination Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>The organization's private<br />OCI registries — any<br />dist-spec registry (Harbor,<br />Zot, …); destination for the<br />stamped images, addressed<br />generically via regctl.</div>")
-    style 60 fill:#69707a,stroke:#494e55,color:#ffffff
-    61("<div style='font-weight: bold'>BuildKit</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OCI build engine knock drives<br />to rebuild and harden images.</div>")
-    style 61 fill:#69707a,stroke:#494e55,color:#ffffff
-    65("<div style='font-weight: bold'>Usage oracle / observability</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Answers 'was this image's<br />content seen in production<br />lately?' (e.g. Datadog).<br />Queried point-in-time by<br />knock purge; never owned by<br />knock.</div>")
-    style 65 fill:#69707a,stroke:#494e55,color:#ffffff
-    66("<div style='font-weight: bold'>Signing / Key service</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>KMS or Fulcio (keyless CA)<br />that knock's attestor uses to<br />sign in-toto attestations<br />(DSSE). Trust is org<br />configuration, not baked in.</div>")
-    style 66 fill:#69707a,stroke:#494e55,color:#ffffff
-    67("<div style='font-weight: bold'>Transparency log (Rekor)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Optional append-only<br />signature log; blank in<br />air-gapped orgs. knock can<br />point at one but never<br />deploys it.</div>")
-    style 67 fill:#0f766e,stroke:#0a524d,color:#ffffff
-    68("<div style='font-weight: bold'>Upstream Scanner</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Produces vulnerability / EOL<br />scan reports (CI pipeline,<br />registry-native scanner, or<br />scan service). knock ingests<br />the report; it never calls<br />the scanner.</div>")
+    67("<div style='font-weight: bold'>Redis (Streams)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Message broker for the scan<br />pipeline: reconcile enqueues<br />placed-image digests; scan<br />workers claim reservations<br />via XAUTOCLAIM (consumer<br />groups). Optional — only<br />required when the<br />knock-oci[scan] extra is<br />installed.</div>")
+    style 67 fill:#69707a,stroke:#494e55,color:#ffffff
+    68("<div style='font-weight: bold'>Source Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External public OCI<br />registries (Docker Hub, Quay,<br />GHCR) the images originate<br />from.</div>")
     style 68 fill:#69707a,stroke:#494e55,color:#ffffff
-    69("<div style='font-weight: bold'>ArgoCD</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>GitOps controller: the<br />App-of-Apps that syncs the<br />knock install from git. This<br />IS the reference deployment —<br />and the demo on kind. The<br />kubectl apply -k<br />overlays/local path is the<br />inner-loop escape hatch, not<br />a separate blueprint.</div>")
+    69("<div style='font-weight: bold'>Source Repositories (git)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External git hosts holding<br />source-derived artifacts —<br />agent skills and other<br />content that is published as<br />a repository rather than as<br />an image. knock resolves a<br />ref to an immutable commit<br />and fetches that tree; it<br />never writes back.</div>")
     style 69 fill:#69707a,stroke:#494e55,color:#ffffff
+    70("<div style='font-weight: bold'>Destination Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>The organization's private<br />OCI registries — any<br />dist-spec registry (Harbor,<br />Zot, …); destination for the<br />stamped images, addressed<br />generically via regctl.</div>")
+    style 70 fill:#69707a,stroke:#494e55,color:#ffffff
+    71("<div style='font-weight: bold'>BuildKit</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OCI build engine knock drives<br />to rebuild and harden images.</div>")
+    style 71 fill:#69707a,stroke:#494e55,color:#ffffff
+    75("<div style='font-weight: bold'>Usage oracle / observability</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Answers 'was this image's<br />content seen in production<br />lately?' (e.g. Datadog).<br />Queried point-in-time by<br />knock purge; never owned by<br />knock.</div>")
+    style 75 fill:#69707a,stroke:#494e55,color:#ffffff
+    76("<div style='font-weight: bold'>Signing / Key service</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>KMS or Fulcio (keyless CA)<br />that knock's attestor uses to<br />sign in-toto attestations<br />(DSSE). Trust is org<br />configuration, not baked in.</div>")
+    style 76 fill:#69707a,stroke:#494e55,color:#ffffff
+    77("<div style='font-weight: bold'>Transparency log (Rekor)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Optional append-only<br />signature log; blank in<br />air-gapped orgs. knock can<br />point at one but never<br />deploys it.</div>")
+    style 77 fill:#0f766e,stroke:#0a524d,color:#ffffff
+    78("<div style='font-weight: bold'>Upstream Scanner</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Produces vulnerability / EOL<br />scan reports (CI pipeline,<br />registry-native scanner, or<br />scan service). knock ingests<br />the report; it never calls<br />the scanner.</div>")
+    style 78 fill:#69707a,stroke:#494e55,color:#ffffff
+    79("<div style='font-weight: bold'>ArgoCD</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>GitOps controller: the<br />App-of-Apps that syncs the<br />knock install from git. This<br />IS the reference deployment —<br />and the demo on kind. The<br />kubectl apply -k<br />overlays/local path is the<br />inner-loop escape hatch, not<br />a separate blueprint.</div>")
+    style 79 fill:#69707a,stroke:#494e55,color:#ffffff
 
     1-. "<div>Configures the hardening<br />policy + registry roster,<br />runs / schedules reconcile</div><div style='font-size: 70%'>[CLI]</div>" .->4
     2-. "<div>Declares its imports as<br />MirrorPolicy files</div><div style='font-size: 70%'>[YAML]</div>" .->4
-    4-. "<div>Lists tags, inspects digests,<br />copies images</div><div style='font-size: 70%'>[regctl]</div>" .->59
-    4-. "<div>Reads mirror state; copies,<br />stamps, retags, deletes</div><div style='font-size: 70%'>[regctl (dist-spec)]</div>" .->60
-    4-. "<div>Submits the hardening rebuild<br />(internal CA trust, package<br />mirror)</div><div style='font-size: 70%'>[buildctl]</div>" .->61
-    2-. "<div>Pulls the hardened images</div><div style='font-size: 70%'>[docker pull (OCI)]</div>" .->60
-    4-. "<div>Queries prod usage at purge<br />time (knock purge)</div><div style='font-size: 70%'>[subprocess (KNOCK_USAGE_ORACLE_CMD)]</div>" .->65
-    4-. "<div>Signs in-toto attestations<br />(DSSE)</div><div style='font-size: 70%'>[cosign]</div>" .->66
-    4-. "<div>Records the signature<br />(optional; blank => skipped)</div><div style='font-size: 70%'>[cosign / rekor]</div>" .->67
-    68-. "<div>Produces scan reports<br />ingested by</div><div style='font-size: 70%'>[SARIF / file]</div>" .->4
-    4-. "<div>Enqueues placed-image<br />digests; scan workers claim<br />reservations (knock-oci[scan]<br />optional)</div><div style='font-size: 70%'>[redis-py 8 / RESP3 Streams]</div>" .->58
-    69-. "<div>Syncs the install manifests<br />from git into the cluster<br />(App-of-Apps reference)</div><div style='font-size: 70%'>[GitOps]</div>" .->4
+    4-. "<div>Lists tags, inspects digests,<br />copies images</div><div style='font-size: 70%'>[regctl]</div>" .->68
+    4-. "<div>Resolves a ref to a commit;<br />fetches the tree at that<br />revision</div><div style='font-size: 70%'>[git]</div>" .->69
+    4-. "<div>Reads mirror state; copies,<br />stamps, retags, deletes</div><div style='font-size: 70%'>[regctl (dist-spec)]</div>" .->70
+    4-. "<div>Submits the hardening rebuild<br />(internal CA trust, package<br />mirror)</div><div style='font-size: 70%'>[buildctl]</div>" .->71
+    2-. "<div>Pulls the hardened images</div><div style='font-size: 70%'>[docker pull (OCI)]</div>" .->70
+    4-. "<div>Queries prod usage at purge<br />time (knock purge)</div><div style='font-size: 70%'>[subprocess (KNOCK_USAGE_ORACLE_CMD)]</div>" .->75
+    4-. "<div>Signs in-toto attestations<br />(DSSE)</div><div style='font-size: 70%'>[cosign]</div>" .->76
+    4-. "<div>Records the signature<br />(optional; blank => skipped)</div><div style='font-size: 70%'>[cosign / rekor]</div>" .->77
+    78-. "<div>Produces scan reports<br />ingested by</div><div style='font-size: 70%'>[SARIF / file]</div>" .->4
+    4-. "<div>Enqueues placed-image<br />digests; scan workers claim<br />reservations (knock-oci[scan]<br />optional)</div><div style='font-size: 70%'>[redis-py 8 / RESP3 Streams]</div>" .->67
+    79-. "<div>Syncs the install manifests<br />from git into the cluster<br />(App-of-Apps reference)</div><div style='font-size: 70%'>[GitOps]</div>" .->4
 
   end

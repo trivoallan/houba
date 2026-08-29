@@ -9,20 +9,20 @@ graph LR
     2["<div style='font-weight: bold'>Product / Application Team</div><div style='font-size: 70%; margin-top: 0px'>[Person]</div><div style='font-size: 80%; margin-top:10px'>Declares its imports as<br />MirrorPolicy files and<br />consumes the hardened,<br />stamped images.</div>"]
     style 2 fill:#52606d,stroke:#39434c,color:#ffffff
 
-    58("<div style='font-weight: bold'>Redis (Streams)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Message broker for the scan<br />pipeline: reconcile enqueues<br />placed-image digests; scan<br />workers claim reservations<br />via XAUTOCLAIM (consumer<br />groups). Optional — only<br />required when the<br />knock-oci[scan] extra is<br />installed.</div>")
-    style 58 fill:#69707a,stroke:#494e55,color:#ffffff
-    59("<div style='font-weight: bold'>Source Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External public OCI<br />registries (Docker Hub, Quay,<br />GHCR) the images originate<br />from.</div>")
-    style 59 fill:#69707a,stroke:#494e55,color:#ffffff
-    60("<div style='font-weight: bold'>Destination Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>The organization's private<br />OCI registries — any<br />dist-spec registry (Harbor,<br />Zot, …); destination for the<br />stamped images, addressed<br />generically via regctl.</div>")
-    style 60 fill:#69707a,stroke:#494e55,color:#ffffff
-    61("<div style='font-weight: bold'>BuildKit</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OCI build engine knock drives<br />to rebuild and harden images.</div>")
-    style 61 fill:#69707a,stroke:#494e55,color:#ffffff
-    65("<div style='font-weight: bold'>Usage oracle / observability</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Answers 'was this image's<br />content seen in production<br />lately?' (e.g. Datadog).<br />Queried point-in-time by<br />knock purge; never owned by<br />knock.</div>")
-    style 65 fill:#69707a,stroke:#494e55,color:#ffffff
-    66("<div style='font-weight: bold'>Signing / Key service</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>KMS or Fulcio (keyless CA)<br />that knock's attestor uses to<br />sign in-toto attestations<br />(DSSE). Trust is org<br />configuration, not baked in.</div>")
-    style 66 fill:#69707a,stroke:#494e55,color:#ffffff
-    67("<div style='font-weight: bold'>Transparency log (Rekor)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Optional append-only<br />signature log; blank in<br />air-gapped orgs. knock can<br />point at one but never<br />deploys it.</div>")
-    style 67 fill:#0f766e,stroke:#0a524d,color:#ffffff
+    67("<div style='font-weight: bold'>Redis (Streams)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Message broker for the scan<br />pipeline: reconcile enqueues<br />placed-image digests; scan<br />workers claim reservations<br />via XAUTOCLAIM (consumer<br />groups). Optional — only<br />required when the<br />knock-oci[scan] extra is<br />installed.</div>")
+    style 67 fill:#69707a,stroke:#494e55,color:#ffffff
+    68("<div style='font-weight: bold'>Source Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External public OCI<br />registries (Docker Hub, Quay,<br />GHCR) the images originate<br />from.</div>")
+    style 68 fill:#69707a,stroke:#494e55,color:#ffffff
+    70("<div style='font-weight: bold'>Destination Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>The organization's private<br />OCI registries — any<br />dist-spec registry (Harbor,<br />Zot, …); destination for the<br />stamped images, addressed<br />generically via regctl.</div>")
+    style 70 fill:#69707a,stroke:#494e55,color:#ffffff
+    71("<div style='font-weight: bold'>BuildKit</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OCI build engine knock drives<br />to rebuild and harden images.</div>")
+    style 71 fill:#69707a,stroke:#494e55,color:#ffffff
+    75("<div style='font-weight: bold'>Usage oracle / observability</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Answers 'was this image's<br />content seen in production<br />lately?' (e.g. Datadog).<br />Queried point-in-time by<br />knock purge; never owned by<br />knock.</div>")
+    style 75 fill:#69707a,stroke:#494e55,color:#ffffff
+    76("<div style='font-weight: bold'>Signing / Key service</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>KMS or Fulcio (keyless CA)<br />that knock's attestor uses to<br />sign in-toto attestations<br />(DSSE). Trust is org<br />configuration, not baked in.</div>")
+    style 76 fill:#69707a,stroke:#494e55,color:#ffffff
+    77("<div style='font-weight: bold'>Transparency log (Rekor)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Optional append-only<br />signature log; blank in<br />air-gapped orgs. knock can<br />point at one but never<br />deploys it.</div>")
+    style 77 fill:#0f766e,stroke:#0a524d,color:#ffffff
 
     subgraph 4 ["knock"]
       style 4 fill:#ffffff,stroke:#154da4,color:#154da4
@@ -30,37 +30,37 @@ graph LR
       subgraph 5 ["knock CLI"]
         style 5 fill:#ffffff,stroke:#19458c,color:#19458c
 
-        52("<div style='font-weight: bold'>config</div><div style='font-size: 70%; margin-top: 0px'>[Component: Pydantic Settings]</div><div style='font-size: 80%; margin-top:10px'>Reads KNOCK_* settings +<br />roster resolvers — the only<br />os.environ reader.</div>")
-        style 52 fill:#cdd5df,stroke:#8f959c,color:#1f2933
-        53("<div style='font-weight: bold'>cli</div><div style='font-size: 70%; margin-top: 0px'>[Component: driving side]</div><div style='font-size: 80%; margin-top:10px'>Thin Typer entrypoint +<br />composition root (_di).</div>")
-        style 53 fill:#cdd5df,stroke:#8f959c,color:#1f2933
-        54("<div style='font-weight: bold'>use cases</div><div style='font-size: 70%; margin-top: 0px'>[Component: application]</div><div style='font-size: 80%; margin-top:10px'>Orchestrates the reconcile<br />flow; depends only on ports.</div>")
-        style 54 fill:#cdd5df,stroke:#8f959c,color:#1f2933
-        55("<div style='font-weight: bold'>domain</div><div style='font-size: 70%; margin-top: 0px'>[Component: pure core]</div><div style='font-size: 80%; margin-top:10px'>Pure core: policy schema,<br />planning, transforms,<br />provenance — no I/O.</div>")
-        style 55 fill:#b6e3d4,stroke:#7f9e94,color:#04342c
-        56("<div style='font-weight: bold'>ports</div><div style='font-size: 70%; margin-top: 0px'>[Component: boundary]</div><div style='font-size: 80%; margin-top:10px'>typing.Protocol interfaces —<br />the hexagon's boundary.</div>")
-        style 56 fill:#e9d8fd,stroke:#a397b1,color:#322659
-        57("<div style='font-weight: bold'>adapters</div><div style='font-size: 70%; margin-top: 0px'>[Component: driven side]</div><div style='font-size: 80%; margin-top:10px'>Implement the ports; reach<br />the external systems<br />(subprocess / stdlib).</div>")
-        style 57 fill:#fed7aa,stroke:#b19676,color:#4a1b0c
+        61("<div style='font-weight: bold'>config</div><div style='font-size: 70%; margin-top: 0px'>[Component: Pydantic Settings]</div><div style='font-size: 80%; margin-top:10px'>Reads KNOCK_* settings +<br />roster resolvers — the only<br />os.environ reader.</div>")
+        style 61 fill:#cdd5df,stroke:#8f959c,color:#1f2933
+        62("<div style='font-weight: bold'>cli</div><div style='font-size: 70%; margin-top: 0px'>[Component: driving side]</div><div style='font-size: 80%; margin-top:10px'>Thin Typer entrypoint +<br />composition root (_di).</div>")
+        style 62 fill:#cdd5df,stroke:#8f959c,color:#1f2933
+        63("<div style='font-weight: bold'>use cases</div><div style='font-size: 70%; margin-top: 0px'>[Component: application]</div><div style='font-size: 80%; margin-top:10px'>Orchestrates the reconcile<br />flow; depends only on ports.</div>")
+        style 63 fill:#cdd5df,stroke:#8f959c,color:#1f2933
+        64("<div style='font-weight: bold'>domain</div><div style='font-size: 70%; margin-top: 0px'>[Component: pure core]</div><div style='font-size: 80%; margin-top:10px'>Pure core: policy schema,<br />planning, transforms,<br />provenance — no I/O.</div>")
+        style 64 fill:#b6e3d4,stroke:#7f9e94,color:#04342c
+        65("<div style='font-weight: bold'>ports</div><div style='font-size: 70%; margin-top: 0px'>[Component: boundary]</div><div style='font-size: 80%; margin-top:10px'>typing.Protocol interfaces —<br />the hexagon's boundary.</div>")
+        style 65 fill:#e9d8fd,stroke:#a397b1,color:#322659
+        66("<div style='font-weight: bold'>adapters</div><div style='font-size: 70%; margin-top: 0px'>[Component: driven side]</div><div style='font-size: 80%; margin-top:10px'>Implement the ports; reach<br />the external systems<br />(subprocess / stdlib).</div>")
+        style 66 fill:#fed7aa,stroke:#b19676,color:#4a1b0c
       end
 
     end
 
-    1-. "<div>Runs / schedules reconcile</div><div style='font-size: 70%'>[CLI]</div>" .->53
-    2-. "<div>Provides MirrorPolicy files</div><div style='font-size: 70%'>[YAML]</div>" .->53
-    53-. "<div>Invokes use cases</div><div style='font-size: 70%'>[Python]</div>" .->54
-    53-. "<div>Reads settings</div><div style='font-size: 70%'>[Pydantic Settings]</div>" .->52
-    53-. "<div>Wires (composition root)</div><div style='font-size: 70%'>[DI]</div>" .->57
-    54-. "<div>Orchestrates pure logic</div><div style='font-size: 70%'>[Python]</div>" .->55
-    54-. "<div>Depends on</div><div style='font-size: 70%'>[Protocol]</div>" .->56
-    57-. "<div>Implement</div><div style='font-size: 70%'>[Protocol]</div>" .->56
-    57-. "<div>Lists, inspects, copies<br />images</div><div style='font-size: 70%'>[regctl]</div>" .->59
-    57-. "<div>Copies, stamps, retags,<br />deletes</div><div style='font-size: 70%'>[regctl]</div>" .->60
-    57-. "<div>Submits the hardening rebuild</div><div style='font-size: 70%'>[buildctl]</div>" .->61
-    57-. "<div>Queries prod usage (purge)</div><div style='font-size: 70%'>[subprocess]</div>" .->65
-    57-. "<div>Signs attestations</div><div style='font-size: 70%'>[cosign]</div>" .->66
-    57-. "<div>Records the signature<br />(optional)</div><div style='font-size: 70%'>[cosign]</div>" .->67
-    57-. "<div>Enqueues / claims scan<br />reservations (knock-oci[scan]<br />optional)</div><div style='font-size: 70%'>[redis-py 8]</div>" .->58
-    2-. "<div>Pulls the hardened images</div><div style='font-size: 70%'>[docker pull (OCI)]</div>" .->60
+    1-. "<div>Runs / schedules reconcile</div><div style='font-size: 70%'>[CLI]</div>" .->62
+    2-. "<div>Provides MirrorPolicy files</div><div style='font-size: 70%'>[YAML]</div>" .->62
+    62-. "<div>Invokes use cases</div><div style='font-size: 70%'>[Python]</div>" .->63
+    62-. "<div>Reads settings</div><div style='font-size: 70%'>[Pydantic Settings]</div>" .->61
+    62-. "<div>Wires (composition root)</div><div style='font-size: 70%'>[DI]</div>" .->66
+    63-. "<div>Orchestrates pure logic</div><div style='font-size: 70%'>[Python]</div>" .->64
+    63-. "<div>Depends on</div><div style='font-size: 70%'>[Protocol]</div>" .->65
+    66-. "<div>Implement</div><div style='font-size: 70%'>[Protocol]</div>" .->65
+    66-. "<div>Lists, inspects, copies<br />images</div><div style='font-size: 70%'>[regctl]</div>" .->68
+    66-. "<div>Copies, stamps, retags,<br />deletes</div><div style='font-size: 70%'>[regctl]</div>" .->70
+    66-. "<div>Submits the hardening rebuild</div><div style='font-size: 70%'>[buildctl]</div>" .->71
+    66-. "<div>Queries prod usage (purge)</div><div style='font-size: 70%'>[subprocess]</div>" .->75
+    66-. "<div>Signs attestations</div><div style='font-size: 70%'>[cosign]</div>" .->76
+    66-. "<div>Records the signature<br />(optional)</div><div style='font-size: 70%'>[cosign]</div>" .->77
+    66-. "<div>Enqueues / claims scan<br />reservations (knock-oci[scan]<br />optional)</div><div style='font-size: 70%'>[redis-py 8]</div>" .->67
+    2-. "<div>Pulls the hardened images</div><div style='font-size: 70%'>[docker pull (OCI)]</div>" .->70
 
   end
