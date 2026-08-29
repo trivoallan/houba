@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -72,5 +73,28 @@ def test_put_referrer_with_blob_journals_and_returns_blob_digest() -> None:
             "application/sarif+json",
             b"{}",
             {"io.knock.scan.tool": "trivy"},
+        )
+    ]
+
+
+def test_put_artifact_journals_and_returns_blob_digest(tmp_path: Path) -> None:
+    blob = tmp_path / "skill.zip"
+    blob.write_bytes(b"PK\x03\x04")
+    reg = FakeRegistryPort()
+    out = reg.put_artifact(
+        "registry.example/skills/probe:1.0.0",
+        artifact_type="application/vnd.knock.skill.v1",
+        blob_path=blob,
+        media_type="application/zip",
+        annotations={"org.opencontainers.image.revision": "deadbeef"},
+    )
+    assert out.startswith("sha256:")
+    assert reg.artifacts == [
+        (
+            "registry.example/skills/probe:1.0.0",
+            "application/vnd.knock.skill.v1",
+            blob,
+            "application/zip",
+            {"org.opencontainers.image.revision": "deadbeef"},
         )
     ]

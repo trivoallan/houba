@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
-from knock.errors import RegctlError
+from knock.errors import ArtifactAnnotationError, ArtifactBlobPathError, RegctlError
 from knock.ports.registry import ImageInfo, Referrer
 
 
@@ -42,6 +43,7 @@ class FakeRegistryPort:
         self.marked: list[tuple[str, str, dict[str, str]]] = []
         self.unmarked: list[str] = []
         self.artifact_referrers: list[tuple[str, str, str, bytes, dict[str, str]]] = []
+        self.artifacts: list[tuple[str, str, Path, str, dict[str, str]]] = []
 
     def configure_registry(self, host: str, *, tls_verify: bool, ca_cert: str | None) -> None:
         self.configured.append((host, tls_verify, ca_cert))
@@ -119,3 +121,30 @@ class FakeRegistryPort:
 
     def delete_referrer(self, referrer_ref: str) -> None:
         self.unmarked.append(referrer_ref)
+
+    def put_artifact(
+        self,
+        image_ref: str,
+        *,
+        artifact_type: str,
+        blob_path: Path,
+        media_type: str,
+        annotations: dict[str, str],
+    ) -> str:
+        if image_ref in self._fail_put:
+            raise RegctlError(f"fake put_artifact failure for {image_ref}")
+        # Enforce the same preconditions as RegctlAdapter (knock/ports/registry.py's
+        # put_artifact docstring) so a use case tested green against this fake doesn't
+        # fail at exit 1 against the real adapter.
+        if not blob_path.is_file():
+            raise ArtifactBlobPathError(f"fake put_artifact: blob_path is not a file: {blob_path}")
+        for key in annotations:
+            if not key or "=" in key:
+                raise ArtifactAnnotationError(f"fake put_artifact: invalid annotation key {key!r}")
+        self.artifacts.append((image_ref, artifact_type, blob_path, media_type, dict(annotations)))
+        # deterministic synthetic manifest digest, keyed on the file's own bytes — like
+        # the real adapter, this is a *manifest* digest, not a layer digest, but hashing
+        # the content (not just the path) keeps the fake able to catch a "digest didn't
+        # change after re-push" bug: two different files at the same tmp path, or the
+        # same content at two different paths, must (dis)agree the way real pushes would.
+        return f"sha256:{hashlib.sha256(blob_path.read_bytes()).hexdigest()}"

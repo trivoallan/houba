@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from knock.errors import RegctlError
+from knock.errors import ArtifactAnnotationError, ArtifactBlobPathError, RegctlError
 from knock.ports.registry import ImageInfo, Referrer
+
+# What a resolved manifest digest looks like on stdout — used to catch regctl printing
+# nothing (its default for `artifact put` by tag: no --format means no output at all)
+# or anything else that isn't a digest, rather than silently returning it as one.
+_DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}$")
 
 
 class RegctlAdapter:
@@ -205,6 +212,77 @@ class RegctlAdapter:
 
     def delete_referrer(self, referrer_ref: str) -> None:
         self._run(["manifest", "delete", referrer_ref])
+
+    def put_artifact(
+        self,
+        image_ref: str,
+        *,
+        artifact_type: str,
+        blob_path: Path,
+        media_type: str,
+        annotations: dict[str, str],
+    ) -> str:
+        # Fail before spawning. A directory as --file pushes a bogus 32-byte layer at RC
+        # 0 (verified against regctl v0.11.5) — regctl accepts it silently, so this has
+        # to catch it. A genuinely missing path already fails inside regctl itself today
+        # (verified: regctl exits non-zero with "no such file or directory"); this
+        # precondition doesn't change that it fails, it only reclassifies it from an
+        # AdapterError (exit 2) to a DomainError (exit 1), the same caller-mistake shape
+        # as the directory case. Path.is_file() itself would swallow a permission-denied
+        # OSError and return False, silently misreporting an infrastructure problem as a
+        # caller mistake — so this stats the path directly to keep that case an
+        # AdapterError (RegctlError) instead.
+        try:
+            st = blob_path.stat()
+        except (FileNotFoundError, NotADirectoryError) as e:
+            raise ArtifactBlobPathError(
+                f"put_artifact: blob_path does not exist: {blob_path}"
+            ) from e
+        except OSError as e:
+            raise RegctlError(f"put_artifact: cannot access blob_path {blob_path}: {e}") from e
+        if not stat.S_ISREG(st.st_mode):
+            raise ArtifactBlobPathError(
+                f"put_artifact: blob_path is not a regular file: {blob_path}"
+            )
+        # regctl splits each --annotation token on the *first* '=', so an empty key or a
+        # key containing '=' pushes a successful, silently wrong manifest (verified: key
+        # "a=b" value "c" becomes annotation {"a": "b=c"}; key "" becomes {"": "v"}). A
+        # value containing '=' is fine — it just becomes part of the value after the
+        # first split — and a value containing '\n' round-trips verbatim into the JSON
+        # annotation value, so neither is rejected here.
+        for key in annotations:
+            if not key or "=" in key:
+                raise ArtifactAnnotationError(
+                    f"put_artifact: invalid annotation key {key!r} "
+                    "(must be non-empty and must not contain '=')"
+                )
+        args = [
+            "artifact",
+            "put",
+            "--artifact-type",
+            artifact_type,
+            "--file-media-type",
+            media_type,
+            "--file",
+            str(blob_path),
+            # `artifact put <ref>` (by tag) prints nothing on success — verified against
+            # regctl v0.11.5. --format is what makes it print the resulting manifest
+            # digest, which is the whole point of this method's return value.
+            "--format",
+            "{{ .Manifest.GetDescriptor.Digest }}",
+        ]
+        # Sorted so the invocation is reproducible for a given annotation set. annotate()
+        # and put_referrer() don't sort theirs: each has one or two call sites that build
+        # the dict inline from a fixed set of fields, so their order is already stable run
+        # to run. put_artifact's caller may assemble annotations from less controlled
+        # metadata, so sorting here is what actually guarantees a byte-identical argv.
+        for key in sorted(annotations):
+            args += ["--annotation", f"{key}={annotations[key]}"]
+        args.append(image_ref)
+        out = self._run(args).strip()
+        if not _DIGEST_RE.fullmatch(out):
+            raise RegctlError(f"put_artifact: expected a manifest digest from regctl, got {out!r}")
+        return out
 
     def _run(self, args: list[str], *, stdin: str | None = None) -> str:
         try:

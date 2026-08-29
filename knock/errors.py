@@ -9,6 +9,8 @@ __all__ = [
     "AdapterError",
     "ArchiveError",
     "ArchiveLayoutError",
+    "ArtifactAnnotationError",
+    "ArtifactBlobPathError",
     "BuildkitError",
     "ConfigError",
     "CosignError",
@@ -46,6 +48,17 @@ class ArchiveLayoutError(ArchiveError):
     root. Layout, not safety — kept as its own subclass (still exit 1 via DomainError in
     its MRO) so that a future policy escape hatch for the layout check could never also
     let a symlink, traversal, collision, or size refusal be bypassed."""
+
+
+class ArtifactAnnotationError(DomainError):
+    """A `put_artifact` annotation key is empty or contains '=' — regctl splits each
+    --annotation token on the first '=', so either would silently mangle the pushed
+    annotation (RC 0) rather than fail loudly."""
+
+
+class ArtifactBlobPathError(DomainError):
+    """A `put_artifact` blob_path does not exist or is not a regular file (e.g. a
+    directory, which regctl otherwise pushes as a bogus layer at RC 0)."""
 
 
 class PolicyValidationError(DomainError):

@@ -4,6 +4,8 @@ from knock.errors import (
     AdapterError,
     ArchiveError,
     ArchiveLayoutError,
+    ArtifactAnnotationError,
+    ArtifactBlobPathError,
     BuildkitError,
     ConfigError,
     DomainError,
@@ -87,3 +89,13 @@ def test_archive_error_is_domain_exit_1() -> None:
 def test_archive_layout_error_is_archive_error_exit_1() -> None:
     assert issubclass(ArchiveLayoutError, ArchiveError)
     assert exit_code_for(ArchiveLayoutError("no marker")) == 1
+
+
+def test_artifact_annotation_error_is_domain_exit_1():
+    assert issubclass(ArtifactAnnotationError, DomainError)
+    assert exit_code_for(ArtifactAnnotationError("bad key")) == 1
+
+
+def test_artifact_blob_path_error_is_domain_exit_1():
+    assert issubclass(ArtifactBlobPathError, DomainError)
+    assert exit_code_for(ArtifactBlobPathError("not a file")) == 1
