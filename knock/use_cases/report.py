@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 from knock.ports.reporter import Counts, ErrorInfo, OperationKind
 
@@ -62,6 +62,21 @@ class RunReport(BaseModel):
     totals: Counts
     policies: list[PolicyReport]
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def failed_policies(self) -> int:
+        """How many policies failed outright.
+
+        `totals` sums *operations*, so a policy that fails before it plans any
+        contributes nothing to it — a run reporting `status="failed"` alongside
+        `totals.failed == 0` is the normal shape, not a bug. Without this field the
+        JSON envelope, which is the documented machine contract, gave a CI consumer
+        no way to count those, while the text recap showed it.
+
+        Computed rather than stored so it cannot drift from `policies`.
+        """
+        return sum(1 for p in self.policies if p.status == "failed")
+
 
 def report_exit_code(report: RunReport) -> int:
     """0 when nothing failed; otherwise the worst (max) failure exit code,
@@ -78,5 +93,12 @@ def report_exit_code(report: RunReport) -> int:
 
 
 def run_report_json_schema() -> dict[str, Any]:
-    """JSON Schema for a RunReport — published for CI consumers to validate output."""
-    return RunReport.model_json_schema()
+    """JSON Schema for a RunReport — published for CI consumers to validate output.
+
+    `mode="serialization"`, not the default `"validation"`: consumers validate what
+    knock *emits*, and the two schemas differ. A computed field like
+    `failed_policies` is absent from the validation schema — it is never an input —
+    so the default would publish a contract that omits a key every run actually
+    carries, and a strict consumer would reject valid output.
+    """
+    return RunReport.model_json_schema(mode="serialization")
