@@ -20,7 +20,7 @@ COPY --from=regclient/regctl:v0.11.5 /regctl /usr/bin/regctl
 COPY --from=ghcr.io/sigstore/cosign/cosign:v3.1.2 /ko-app/cosign /usr/bin/cosign
 
 # syft generates the package-level SBOM on both paths (KNOCK_SBOM_FORMATS).
-COPY --from=anchore/syft:v1.48.0 /syft /usr/bin/syft
+COPY --from=anchore/syft:v1.51.1 /syft /usr/bin/syft
 
 # bash: the demo/ops Jobs (reconcile helpers, blast-radius, publish-sbom, scan-attach, seed-incident)
 # run bash scripts mounted into this image — Alpine ships only busybox sh, so add bash (regression
