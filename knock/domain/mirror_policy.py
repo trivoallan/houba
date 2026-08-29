@@ -161,7 +161,10 @@ class Variant(_CamelModel):
 # ponytail: shape-only check, not a Backstage catalog lookup. Accepts the three
 # Backstage entity-ref forms: name | namespace/name | kind:namespace/name.
 # Upgrade path: resolve/validate against a real catalog when one is wired.
-_OWNER_RE = re.compile(r"^([A-Za-z0-9]+:)?([A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+$")
+# `\Z`, not `$`: `$` also matches just before a trailing newline, so it would accept
+# "group:default/platform\n" and carry that newline into an OCI annotation value via
+# _lineage_annotations. Same anchoring rule as _GIT_URL_RE above.
+_OWNER_RE = re.compile(r"^([A-Za-z0-9]+:)?([A-Za-z0-9._-]+/)?[A-Za-z0-9._-]+\Z")
 
 
 def _validate_owner(value: str) -> str:

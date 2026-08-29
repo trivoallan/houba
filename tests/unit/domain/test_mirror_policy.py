@@ -388,3 +388,19 @@ def test_malformed_owner_rejected() -> None:
             "  source: {registry: docker.io, repository: library/redis}\n"
             "  imports: [{name: v, tags: {}, owners: ['bad owner!']}]\n"
         )
+
+
+def test_owner_with_a_trailing_newline_rejected() -> None:
+    """`$` matches just before a final newline; `\\Z` does not.
+
+    An owner ref reaches an OCI annotation value through _lineage_annotations, so a
+    trailing newline accepted here would be carried into a published label.
+    """
+    with pytest.raises(PolicyValidationError):
+        parse_mirror_policy(
+            "apiVersion: knock.io/v1alpha1\nkind: MirrorPolicy\nmetadata: {name: x}\n"
+            "spec:\n"
+            "  artifactType: image\n"
+            "  source: {registry: docker.io, repository: library/redis}\n"
+            '  imports: [{name: v, tags: {}, owners: ["payments\\n"]}]\n'
+        )
