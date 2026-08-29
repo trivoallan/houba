@@ -445,6 +445,41 @@ def test_match_falls_back_to_the_bare_entry_outside_any_namespace() -> None:
     assert match is not None and match[0] == "bare"
 
 
+# Nested namespaces (`artifactory.corp/docker-local` alongside
+# `artifactory.corp/docker-local/team`) are a realistic roster shape: a ref inside the
+# inner namespace matches BOTH entries by prefix, so only the longest-host-first sort
+# separates them.
+
+
+def test_match_prefers_the_inner_of_two_nested_namespaces() -> None:
+    roster = {
+        "outer": RegistryConfig(host="ghcr.io/acme"),
+        "inner": RegistryConfig(host="ghcr.io/acme/team"),
+    }
+    match = match_registry_by_host("ghcr.io/acme/team/redis:7.2.0", roster)
+    assert match is not None and match[0] == "inner"
+
+
+def test_match_prefers_the_inner_namespace_whatever_the_roster_order() -> None:
+    # Same roster, opposite insertion order: a regression to plain `roster.items()`
+    # would pass the test above by dict-ordering luck and fail here.
+    roster = {
+        "inner": RegistryConfig(host="ghcr.io/acme/team"),
+        "outer": RegistryConfig(host="ghcr.io/acme"),
+    }
+    match = match_registry_by_host("ghcr.io/acme/team/redis:7.2.0", roster)
+    assert match is not None and match[0] == "inner"
+
+
+def test_match_falls_back_to_the_outer_namespace_outside_the_inner_one() -> None:
+    roster = {
+        "outer": RegistryConfig(host="ghcr.io/acme"),
+        "inner": RegistryConfig(host="ghcr.io/acme/team"),
+    }
+    match = match_registry_by_host("ghcr.io/acme/other/redis:7.2.0", roster)
+    assert match is not None and match[0] == "outer"
+
+
 # ---------------------------------------------------------------------------
 # Task 9 — KNOCK_SCAN_REDIS config + loud flat-REDIS_* migration error
 # ---------------------------------------------------------------------------
