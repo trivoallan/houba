@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -11,6 +12,10 @@ from pathlib import Path
 
 from knock.errors import RegctlError
 from knock.ports.registry import ImageInfo, Referrer
+
+# cf. cosign_cli._DIGEST_RE: same shape, but anchored full-match since --format's output
+# is expected to be exactly the digest and nothing else.
+_DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
 
 
 class RegctlAdapter:
@@ -188,7 +193,20 @@ class RegctlAdapter:
         blob: bytes = b"",
         media_type: str | None = None,
     ) -> str:
-        args = ["artifact", "put", "--subject", image_ref, "--artifact-type", artifact_type]
+        # `artifact put` prints nothing on stdout when pushing by tag or by subject — only
+        # `--by-digest` or an explicit `--format` get a digest out of it. --format is the
+        # established idiom here (list_referrers already relies on it), and it is required
+        # on both invocation paths below so the return value is never a silent lie.
+        args = [
+            "artifact",
+            "put",
+            "--subject",
+            image_ref,
+            "--artifact-type",
+            artifact_type,
+            "--format",
+            "{{ .Manifest.GetDescriptor.Digest }}",
+        ]
         for key, value in annotations.items():
             args += ["--annotation", f"{key}={value}"]
         if blob:
@@ -201,7 +219,13 @@ class RegctlAdapter:
                 out = self._run(args)
         else:
             out = self._run(args, stdin="")
-        return out.strip()
+        digest = out.strip()
+        if not _DIGEST_RE.fullmatch(digest):
+            raise RegctlError(
+                f"regctl artifact put returned no digest for {image_ref} "
+                f"(expected 'sha256:<hex>', got {digest!r})"
+            )
+        return digest
 
     def delete_referrer(self, referrer_ref: str) -> None:
         self._run(["manifest", "delete", referrer_ref])
