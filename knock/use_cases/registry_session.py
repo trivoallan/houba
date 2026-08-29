@@ -6,6 +6,8 @@ before they touch it. This is the single place that block lives.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from knock.config import RegistryConfig
 from knock.ports.registry import RegistryPort
 
@@ -34,3 +36,18 @@ def ensure_registry_session(
             tls_verify=cfg.tls_verify,
         )
     logged_in.add(host)
+
+
+def walk_repo_refs(registry: RegistryPort, cfg: RegistryConfig) -> Iterator[str]:
+    """Yield every fully-qualified repo ref this roster entry owns.
+
+    The catalog API is registry-wide, so a path-prefixed host (`ghcr.io/acme`) must filter
+    the catalog down to its own namespace — otherwise a coverage walk reports on repos the
+    entry does not own. A bare host filters nothing and yields the whole catalog, exactly
+    as before.
+    """
+    prefix = cfg.path_prefix
+    for repo in registry.list_repositories(cfg.registry_host):
+        if prefix and not repo.startswith(f"{prefix}/"):
+            continue
+        yield f"{cfg.registry_host}/{repo}"

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from knock.config import RegistryConfig
-from knock.use_cases.registry_session import ensure_registry_session
+from knock.use_cases.registry_session import ensure_registry_session, walk_repo_refs
 from tests.fakes.registry import FakeRegistryPort
 
 
@@ -55,3 +55,17 @@ def test_two_namespaces_on_one_registry_share_a_single_session() -> None:
         reg, RegistryConfig(host="ghcr.io/acme-staging", username="u", password="p"), logged_in
     )
     assert len(reg.logins) == 1
+
+
+def test_walk_yields_every_repo_for_a_bare_host() -> None:
+    reg = FakeRegistryPort(repositories={"harbor.corp": ["lib/redis", "lib/nginx"]})
+    cfg = RegistryConfig(host="harbor.corp")
+    assert list(walk_repo_refs(reg, cfg)) == ["harbor.corp/lib/redis", "harbor.corp/lib/nginx"]
+
+
+def test_walk_filters_the_catalog_to_the_path_prefix() -> None:
+    reg = FakeRegistryPort(
+        repositories={"ghcr.io": ["acme/redis", "other/redis", "acme-staging/redis"]}
+    )
+    cfg = RegistryConfig(host="ghcr.io/acme")
+    assert list(walk_repo_refs(reg, cfg)) == ["ghcr.io/acme/redis"]
