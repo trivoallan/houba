@@ -52,7 +52,21 @@ PLUGIN_MARKERS = (
 
 @dataclass(frozen=True)
 class SourceFile:
-    """One file as the caller found it on disk. `path` is relative to the tree root."""
+    """One file as the caller found it on disk. `path` is relative to the tree root.
+
+    Contract for `size`: it must equal the exact byte count a `read_bytes()` of this
+    path would return at the moment the tree was walked. A writer that later turns the
+    plan into bytes checks each entry's actual byte count against this value to catch
+    the tree changing between planning and writing, so the number recorded here has to
+    be the one that check can trust. There is no tree-walking adapter in this repo yet,
+    so the rule is written down here for whoever builds one: measure with `stat`
+    (which follows a symlink to its target), not `lstat` (which reports the size of the
+    link itself, almost always a handful of bytes). Note that a `stat`-based size for a
+    symlink matches `read_bytes()` on the *target* exactly — a byte-count check alone
+    cannot tell a symlink from a regular file with the same content length, which is
+    why `is_symlink` is its own field: whether a path is a symlink must be refused on
+    its own, independent of any size comparison.
+    """
 
     path: str
     size: int
@@ -72,7 +86,7 @@ class ArchiveEntry:
 
 
 def path_escapes_root(path: str) -> bool:
-    """True if `path` is unsafe to extract underneath the tree root.
+    """True if `path` is unsafe to write into an archive underneath the tree root.
 
     Rejects absolute paths, parent-directory traversal (checked after normalisation, so
     `a/../../b` is caught even though no single segment reads `..` before it), the empty
@@ -86,10 +100,16 @@ def path_escapes_root(path: str) -> bool:
     `evil` and walks out of the root there. Refusing any backslash here closes that gap
     without needing to know what will extract the archive.
 
-    Public (not `_`-prefixed) because `plan_archive` is not the only place this must be
-    enforced: `knock.adapters.zip_writer.write_archive` calls it too, on every entry it
-    is asked to write, so that a caller which builds `ArchiveEntry` values without going
-    through `plan_archive` cannot smuggle a root-escaping arcname into the zip. One
+    Finally rejects any path that is not already in normalised form (`a/../b`, `a/./b`,
+    a trailing slash). None of those escape the root, so they are safe to *extract*, but
+    the whole reproducibility argument for this archive format rests on "canonical,
+    sorted entries" — two differently-spelled arcnames for the same real path would
+    silently break that premise, so a caller must supply the canonical form or be
+    refused, not have it silently normalised for them.
+
+    Public (not `_`-prefixed) because more than one caller must enforce this rule: any
+    writer that turns a planned entry list into archive bytes needs the same check at
+    the point it touches the filesystem, not just whoever built the plan. One
     predicate, enforced at both the planning boundary and the write boundary.
     """
     if not path or "\\" in path:
@@ -97,7 +117,9 @@ def path_escapes_root(path: str) -> bool:
     if posixpath.isabs(path):
         return True
     normalised = posixpath.normpath(path)
-    return normalised in (".", "..") or normalised.startswith("../")
+    if normalised in (".", "..") or normalised.startswith("../"):
+        return True
+    return normalised != path
 
 
 def _has_marker(paths: list[str]) -> bool:

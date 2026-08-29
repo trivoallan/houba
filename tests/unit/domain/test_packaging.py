@@ -113,3 +113,15 @@ def test_path_escapes_root_is_the_public_predicate_plan_archive_enforces() -> No
     assert path_escapes_root(".") is True
     assert path_escapes_root("skills/a.md") is False
     assert path_escapes_root(".claude-plugin/plugin.json") is False
+
+
+def test_path_escapes_root_refuses_non_canonical_forms() -> None:
+    """`a/../b` and `a/./b` do not escape the root — they resolve to a real path inside
+    it — but they are still refused, because the reproducibility argument for the
+    archive format depends on every entry already being in its one canonical spelling.
+    Silently normalising them would let two differently-spelled arcnames alias the same
+    real file."""
+    assert path_escapes_root("a/../b") is True
+    assert path_escapes_root("a/./b") is True
+    assert path_escapes_root("skills/") is True
+    assert path_escapes_root("skills/a.md") is False  # already canonical

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 __all__ = [
     "AdapterError",
+    "ArchiveDestinationWriteError",
     "ArchiveError",
     "ArchiveSizeMismatchError",
     "ArchiveSourceReadError",
@@ -38,8 +39,12 @@ class DomainError(KnockError):
 
 
 class ArchiveError(DomainError):
-    """A source tree cannot be packaged safely (symlink, path escape, size, or
-    missing plugin marker)."""
+    """A source tree, or a planned entry list, cannot be packaged safely: a symlink, a
+    path that escapes the root, a non-canonical or duplicate archive path, an
+    oversized tree, or a tree with no plugin marker. Raised both while planning
+    (`knock.domain.packaging.plan_archive`) and while writing
+    (`knock.adapters.zip_writer.write_archive`), since the writer re-checks what it
+    can independently verify from the filesystem rather than trusting the plan."""
 
 
 class PolicyValidationError(DomainError):
@@ -70,9 +75,18 @@ class ArchiveSourceReadError(AdapterError):
 
 
 class ArchiveSizeMismatchError(AdapterError):
-    """A source file's actual byte count did not match the size `plan_archive`
-    recorded for it — the tree changed underneath the packaging step between
-    planning and writing, so the digest would silently cover a partial file."""
+    """A source file's byte count no longer matches the size `plan_archive` recorded
+    for it when the archive is written — a concurrent-modification race caught at the
+    write boundary (the tree changed underneath the packaging step), not a bug and not
+    an invalid plan. Exit 2 is chosen because the remedy is environmental — re-run
+    against a quiescent tree — not because the adapter itself misbehaved."""
+
+
+class ArchiveDestinationWriteError(AdapterError):
+    """The archive's destination could not be created, written to, or finalised
+    (unwritable directory, destination is itself a directory, disk full at flush) — a
+    filesystem fault on the output side, mirroring `ArchiveSourceReadError` on the
+    input side."""
 
 
 class RegctlError(AdapterError):
