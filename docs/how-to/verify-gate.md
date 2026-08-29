@@ -1,7 +1,7 @@
 ---
 title: "Gate a promotion or CI step with knock verify"
 description: "Turn knock's signed scan attestation, provenance stamp, and SBOM referrer into a single exit-0/1 gate with knock verify."
-sidebar_position: 3
+sidebar_position: 4
 ---
 
 `knock verify <ref>` is a **read-only gate**: it reads the facts that `attach` and `reconcile`

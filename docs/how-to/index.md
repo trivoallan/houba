@@ -7,6 +7,7 @@ sidebar_position: 0
 
 Task-oriented guides — each solves one concrete problem against a running knock.
 
+- [Verify a published stamp](verify-published-stamp.md) — read the stamp, fetch the SBOM and verify the signature on a live public image, with stock tools and no account.
 - [Attach a scan result](attach-scan.md) — ingest an upstream SARIF report as a signed OCI referrer; use `--fail-on` as a severity CI gate.
 - [GC superseded scan referrers](gc-scan-referrers.md) — reap stale scan referrers with `knock gc`, keeping the newest per (tool, format).
 - [Purge unused tags](purge-unused-tags.md) — usage-gate and hard-delete marked tags with `knock purge`; wire your own usage oracle.

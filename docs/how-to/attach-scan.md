@@ -1,7 +1,7 @@
 ---
 title: "Attach a scan result"
 description: "Ingest an upstream SARIF report as a signed OCI referrer with knock attach, using --fail-on as a severity CI gate."
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 knock does not run scanners. A scan is produced **upstream** (your CI, a registry-native

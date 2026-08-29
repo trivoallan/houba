@@ -1,7 +1,7 @@
 ---
 title: "Purge unused tags"
 description: "The reference reaper: how marked tags get usage-gated and hard-deleted with knock purge, and how to wire your own usage oracle."
-sidebar_position: 6
+sidebar_position: 7
 ---
 
 `knock purge` is the shipped reference implementation of the reaper role introduced by

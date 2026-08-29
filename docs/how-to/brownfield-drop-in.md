@@ -1,7 +1,7 @@
 ---
 title: "Drop knock into an existing Jenkins/skopeo/Harbor intake"
 description: "Replace a skopeo→Harbor tag-only mirror with knock: same per-image policy, digest-pinned provenance, a declared owner label, and a signed SBOM inventory — so incident-time blast radius is one query."
-sidebar_position: 10
+sidebar_position: 11
 ---
 
 # Drop knock into an existing Jenkins/skopeo/Harbor intake
