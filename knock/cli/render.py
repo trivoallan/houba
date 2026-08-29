@@ -54,12 +54,12 @@ def render_report(report: RunReport, *, fmt: str, verbose: bool, stream: TextIO)
                     stream.write(_op_line(op))
 
     t = report.totals
-    failed_policies = sum(1 for p in report.policies if p.status == "failed")
     stream.write(
         f"reconcile [{report.mode}] status={report.status}  "
         f"imported={t.imported} updated={t.updated} deleted={t.deleted} "
         f"aliased={t.aliased} skipped={t.skipped} marked={t.marked} "
-        f"attested={t.attested} sbom={t.sbom} failed={t.failed} failed_policies={failed_policies}\n"
+        f"attested={t.attested} sbom={t.sbom} failed={t.failed} "
+        f"failed_policies={report.failed_policies}\n"
     )
 
 
