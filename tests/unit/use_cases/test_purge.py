@@ -162,3 +162,39 @@ def test_inspect_failure_is_recorded_and_does_not_block_siblings() -> None:
     assert [o.image_ref for o in errs] == ["harbor.example/lib/redis:7.1"]
     assert "harbor.example/lib/redis:7.2" in reg.deleted  # sibling still purged
     assert purge_exit_code(report) == 2  # RegctlError -> AdapterError -> 2
+
+
+_FALLBACK_TAG = "sha256-3821e65d0f6c0d2b0a2a3f5c6e7d8a9b0c1d2e3f405162738495a6b7c8d9e0f1"
+
+
+def test_referrers_fallback_tags_are_never_purged() -> None:
+    # A `sha256-<digest>` tag is a referrer MANIFEST (SBOM, signature, pending-deletion mark)
+    # that registries without the referrers API expose in the subject's tag list. Treating it
+    # as an image is not merely wasteful: reaching the apply path would delete the referrer
+    # itself. Seed it with a mark so the walk would otherwise carry it into a purge decision.
+    host, repo = "harbor.example", "harbor.example/lib/redis"
+    reg = FakeRegistryPort(
+        repositories={host: ["lib/redis"]},
+        tags={repo: ["7.1", _FALLBACK_TAG]},
+        infos={
+            f"{repo}:7.1": ImageInfo(digest="sha256:d71", created=None, annotations={}),
+            f"{repo}:{_FALLBACK_TAG}": ImageInfo(digest="sha256:dfb", created=None, annotations={}),
+        },
+        referrers={
+            f"{repo}:7.1": [_mark("7.1")],
+            f"{repo}:{_FALLBACK_TAG}": [_mark(_FALLBACK_TAG)],
+        },
+    )
+    report = purge_marks(
+        registry=reg,
+        oracle=FakeUsageOraclePort(last_seen={}),
+        roster=_ROSTER,
+        only_registry=None,
+        label_prefix="io.knock",
+        min_idle_days=15,
+        now=NOW,
+        apply=True,
+    )
+    assert [o.image_ref for o in report.outcomes] == [f"{repo}:7.1"]
+    assert reg.deleted == [f"{repo}:7.1"]
+    assert f"{repo}:{_FALLBACK_TAG}" not in reg.deleted

@@ -356,3 +356,24 @@ def test_audit_of_a_path_prefixed_registry_walks_only_its_namespace() -> None:
     )
     assert [o.image_ref for o in report.outcomes] == ["ghcr.io/acme/redis:7.2.0"]
     assert report.counts.scanned == 1
+
+
+_FALLBACK_TAG = "sha256-3821e65d0f6c0d2b0a2a3f5c6e7d8a9b0c1d2e3f405162738495a6b7c8d9e0f1"
+
+
+def test_referrers_fallback_tags_are_not_audited_as_images() -> None:
+    # On a registry without the referrers API, knock's own SBOM/signature referrers are
+    # stored under a `sha256-<digest>` tag in the subject's repo. Counting them as images
+    # would report a SILENTLY WRONG coverage number (every one of them "uncovered").
+    reg = FakeRegistryPort(
+        repositories={_HOST: ["lib/redis"]},
+        tags={_REPO: ["7.1", _FALLBACK_TAG]},
+        annotations={f"{_REPO}:7.1": {"io.knock.policy": "redis"}},
+    )
+    report = audit_coverage(
+        registry=reg, roster=_ROSTER, only_registry=None, label_prefix="io.knock"
+    )
+    assert [o.image_ref for o in report.outcomes] == [f"{_REPO}:7.1"]
+    assert report.counts.scanned == 1
+    assert report.counts.uncovered == 0
+    assert audit_exit_code(report, fail_on_uncovered=True) == 0
