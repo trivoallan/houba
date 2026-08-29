@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.3](https://github.com/trivoallan/knock/compare/v0.9.2...v0.9.3) (2026-08-29)
+
+
+### Bug Fixes
+
+* **domain:** keyless signing works with no Fulcio/Rekor configured ([#252](https://github.com/trivoallan/knock/issues/252)) ([e97031a](https://github.com/trivoallan/knock/commit/e97031a73a36ee20876031f1e783417d56252f52))
+
+
+### Documentation
+
+* **docs:** a how-to for verifying the publicly published stamp ([#251](https://github.com/trivoallan/knock/issues/251)) ([b9df4cf](https://github.com/trivoallan/knock/commit/b9df4cf882fb64b023f9e05cc58dfdcb2685fae1))
+
 ## [0.9.2](https://github.com/trivoallan/knock/compare/v0.9.1...v0.9.2) (2026-08-29)
 
 
