@@ -129,6 +129,23 @@ Two of the former *Now* items shipped:
   reports `with_sbom` / `without_sbom`. The coverage ladder is now four rungs:
   `uncovered < stamped < signed < has-SBOM`. *(ADR 0029; closed #143)*
 
+## Delivered — the stamp, publicly verifiable (2026-08)
+
+The demonstrable face of adoption no longer needs a clone or a cluster. A separate public repository,
+**[knock-examples](https://github.com/trivoallan/knock-examples)**, runs the *real* example policies —
+checked out of this repository at a pinned tag, never copied, so they cannot drift — and publishes
+stamped, SBOM-carrying, keyless-signed images to GHCR every week. A stranger reads the stamp, fetches
+the SBOM and verifies the signature from their own terminal, against the exact policy file this site
+documents; the signing identity is the workflow URL, so they trust a GitHub Actions run rather than us.
+A deliberately unstamped *bypass* image sits beside them as the permanent counter-example. The
+verification script is the workflow's own final step, so the page cannot promise what the showcase does
+not do. *(How-to: [Verify a published stamp](how-to/verify-published-stamp.md).)*
+
+Running it for real paid for itself immediately: it surfaced three defects that no test had — registry
+hosts could not carry a path prefix (so GHCR, GitLab and Artifactory were untargetable), every release
+was being tagged without its image ever being published, and knock treated the OCI referrers *fallback*
+tags as images, so it could not reconcile twice into any registry lacking the referrers API.
+
 ## Now — make the mandate demonstrable (adoption)
 
 > Theme: the core loop, the enforceable/trustworthy mandate, and package-level blast-radius are all

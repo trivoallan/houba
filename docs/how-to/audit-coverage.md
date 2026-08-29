@@ -1,7 +1,7 @@
 ---
 title: "Audit coverage"
 description: "Find images that lack the stamp with knock audit, and gate CI on coverage, signing, or SBOM presence."
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 Once images are flowing through knock, **`knock audit`** answers the coverage-gate question:

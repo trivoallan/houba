@@ -1,7 +1,7 @@
 ---
 title: "Run the reference deployment"
 description: "Run knock as a Kubernetes CronJob — the kind demo and the production blueprint: git-synced policies, rootless buildkitd, a blast-radius consumer, and optional KEDA autoscaling."
-sidebar_position: 9
+sidebar_position: 10
 ---
 
 The blessed way to run knock: a Kubernetes **CronJob** that `knock reconcile`s a
