@@ -156,7 +156,8 @@ Artifactory are all path-namespaced. It ships as its own PR, before the showcase
 ## Deferred — coverage (`knock audit`) has no registry to walk
 
 `audit`, `gc`, and `purge` enumerate through `list_repositories` → `regctl repo ls` → the OCI catalog
-API (`use_cases/audit.py:125`). **GHCR does not implement `/v2/_catalog`.** `reconcile` is unaffected
+API (`use_cases/audit.py:125`). **GHCR does not implement `/v2/_catalog`** — confirmed by spike, see
+above. `reconcile` is unaffected
 (it addresses repositories named by the policies), but a published coverage report — "X stamped,
 Y signed, Z with SBOM, and here is the blind spot" — cannot run on GHCR as things stand.
 
@@ -164,6 +165,32 @@ Resolving it means either teaching `list_repositories` to enumerate through the 
 the OCI catalog is absent, or hosting a catalog-capable registry (Zot). Both are real commitments with
 their own trade-offs, and neither should block a showcase that is already valuable without them.
 **Coverage is a separate specification.** This one ships the stamp proof.
+
+## Spike results — both GHCR assumptions confirmed
+
+Run as a throwaway GitHub Actions workflow rather than locally, so the workflow's own `GITHUB_TOKEN`
+provided GHCR access and no personal token was handled — and so the probe ran under the showcase's
+real conditions.
+
+**The referrers API is absent.** After `regctl artifact put --subject`, the subject repository's tag
+list carries a fallback tag alongside the real one:
+
+```
+sha256-2f4da11ec2ed0fccf8e93186bf9bdd7b7115a649a0b954c1a09f776d5199174d
+v1
+```
+
+Two consequences for the README. `regctl artifact list` **does** return the descriptor with its
+`artifactType`, so the SBOM step of the proof stands as written — regctl resolves the fallback
+transparently. But a raw `curl` against `/v2/.../referrers/` must never be offered, and the published
+repositories will visibly carry `sha256-…` tags beside the real ones. Cosmetic, and worth a sentence in
+the README so a visitor does not read them as a defect.
+
+**The catalog API is absent.** `regctl repo ls ghcr.io` fails. The coverage deferral below therefore
+rests on an observation, not an assumption — and it has a second edge worth recording: if GHCR ever
+returned an *empty* catalog rather than an error, `walk_repo_refs` would yield nothing and `audit`
+would report zero coverage **silently**, which is the same failure class that function exists to
+prevent, arriving from the other direction.
 
 ## Failure modes
 
@@ -175,7 +202,7 @@ mitigation: a half-stamped publish turns the job, and the badge, red.
 | Failure | Treatment |
 |---|---|
 | Docker Hub throttling / expired PAT | Explicit named login step, so the red is legible at a glance. This will happen. |
-| GHCR lacks the referrers API | regctl falls back to the tag scheme; `regctl artifact list` keeps working, a raw `curl` does not. **Decisive spike before committing** — it determines what the README may promise. |
+| GHCR lacks the referrers API | **Confirmed by spike, not assumed** (see below). regctl falls back to the tag scheme; `regctl artifact list` keeps working, a raw `curl` does not. |
 | Fulcio / Rekor unavailable | The job fails; `verify.sh` guarantees nothing half-published survives. No retry — the schedule is weekly, the next run catches up. |
 | Upstream drift (new tags) | Not a failure. Digests move, the stamp follows: the product working. |
 | A Renovate knock bump breaks the showcase | The canary warned the night before. |
