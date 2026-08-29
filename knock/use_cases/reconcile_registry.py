@@ -139,7 +139,7 @@ def _resolve_ref(
     raise InternalError(f"no resolver for resource kind {ref.kind!r}")
 
 
-def resolve_transform(
+def _resolve_transform(
     steps: list[TransformStep],
     ca_certs: dict[str, CACertSource],
     package_mirrors: dict[str, PackageMirror],
@@ -189,7 +189,7 @@ def _build_variant(
 
 
 @dataclass(frozen=True)
-class Plan:
+class _Plan:
     policy: MirrorPolicy
     expanded: ExpandedImport
     dest_repo: str
@@ -200,13 +200,13 @@ class Plan:
 def _require_registry_source(policy: MirrorPolicy) -> RegistrySource:
     """Narrow `policy.spec.source` to a `RegistrySource`.
 
-    This use case only reconciles registry-sourced policies: image/helmChart are
-    always registry-sourced, and generic may be either (see mirror_policy.py's
-    asymmetric source/artifactType rule). `reconcile_policies` filters out every
-    git-sourced policy — skill, and any git-sourced generic — before the plan phase
-    even starts, reporting each as skipped (see `_skipped_source_report`), so a git
-    source should never reach this function. If it does, that is a bug in that
-    filter, not a user-input problem: hence `InternalError`.
+    This module only reconciles registry-sourced policies: image/helmChart are always
+    registry-sourced, and generic may be either (see mirror_policy.py's asymmetric
+    source/artifactType rule). A git-sourced policy — skill, and any git-sourced
+    generic — never reaches this function: the driver partitions its worklist by each
+    planner's `handles` before the plan phase starts, and `RegistryPlanner.handles`
+    claims registry sources only. If a git source does reach here, that is a bug in
+    that partition, not a user-input problem: hence `InternalError`.
     """
     s = policy.spec.source
     if not isinstance(s, RegistrySource):
@@ -217,7 +217,7 @@ def _require_registry_source(policy: MirrorPolicy) -> RegistrySource:
     return s
 
 
-def source_repo(policy: MirrorPolicy) -> str:
+def _source_repo(policy: MirrorPolicy) -> str:
     s = _require_registry_source(policy)
     return f"{s.registry}/{s.repository}"
 
@@ -290,8 +290,8 @@ def _counts_of(operations: list[Operation]) -> Counts:
     )
 
 
-def apply_plan(
-    plan: Plan,
+def _apply_plan(
+    plan: _Plan,
     *,
     registry: RegistryPort,
     builder: ImageBuilderPort,
@@ -875,7 +875,8 @@ class RegistryPlanner:
     """The registry-sourced planner: plan every policy it owns, then apply.
 
     Satisfies `PolicyPlanner` structurally. The two method bodies are the plan and
-    apply loops `reconcile_policies` runs today, lifted verbatim.
+    apply loops `reconcile_policies` used to run inline, lifted verbatim; it now
+    dispatches to them here.
 
     The split of `reconcile_policies`' parameters follows the rule `PolicyPlanner`
     states: what the DRIVER owns or shares across planners stays a method parameter
@@ -911,7 +912,7 @@ class RegistryPlanner:
     # None until `plan` runs — see the guard in `apply`. `init=False` keeps it out of
     # the constructor, `repr=False` out of every log line and exception repr (it holds
     # each MirrorPolicy and RegistryConfig in the batch).
-    _plans: list[tuple[MirrorPolicy, list[Plan]]] | None = field(
+    _plans: list[tuple[MirrorPolicy, list[_Plan]]] | None = field(
         default=None, init=False, repr=False
     )
 
@@ -920,12 +921,12 @@ class RegistryPlanner:
 
     def plan(self, policies: list[MirrorPolicy]) -> list[AliasTarget]:
         alias_entries: list[AliasTarget] = []
-        plans: list[tuple[MirrorPolicy, list[Plan]]] = []
+        plans: list[tuple[MirrorPolicy, list[_Plan]]] = []
         for policy in policies:
             # Configure the source registry's TLS/auth (from the roster) before listing its tags —
             # a plain-HTTP or custom-CA source registry otherwise fails the plan-phase `tag ls`.
             # Sources not in the roster (public upstreams like docker.io) keep ambient HTTPS config.
-            src_repo = source_repo(policy)
+            src_repo = _source_repo(policy)
             src_match = match_registry_by_host(src_repo, self.roster)
             if src_match is not None:
                 ensure_registry_session(self.registry, src_match[1], self.logged_in)
@@ -934,13 +935,13 @@ class RegistryPlanner:
             src_tags = [
                 t for t in self.registry.list_tags(src_repo) if not is_referrers_fallback_tag(t)
             ]
-            policy_plans: list[Plan] = []
+            policy_plans: list[_Plan] = []
             for resolved in resolve_imports(policy.spec):
                 expanded = expand_import(resolved, src_tags)
                 for v in expanded.variants:
                     validate_transform_steps(v.transform)
                 transforms = {
-                    v.name: resolve_transform(v.transform, self.ca_certs, self.package_mirrors)
+                    v.name: _resolve_transform(v.transform, self.ca_certs, self.package_mirrors)
                     for v in expanded.variants
                     if v.transform
                 }
@@ -948,7 +949,7 @@ class RegistryPlanner:
                     _name, cfg = resolve_registry(dest.registry, self.roster)
                     dest_repo = f"{cfg.host}/{dest.project}/{dest.repository}"
                     policy_plans.append(
-                        Plan(
+                        _Plan(
                             policy=policy,
                             expanded=expanded,
                             dest_repo=dest_repo,
@@ -980,7 +981,7 @@ class RegistryPlanner:
             raise InternalError("RegistryPlanner.apply called before plan")
         policy_reports: list[PolicyReport] = []
         for policy, policy_plans in self._plans:
-            source_ref = source_repo(policy)
+            source_ref = _source_repo(policy)
             reporter.policy_started(policy.metadata.name, source_ref)
             try:
                 targets: list[TargetReport] = []
@@ -988,7 +989,7 @@ class RegistryPlanner:
                     cfg = plan.config
                     ensure_registry_session(self.registry, cfg, self.logged_in)
                     targets.append(
-                        apply_plan(
+                        _apply_plan(
                             plan,
                             registry=self.registry,
                             builder=self.builder,
