@@ -337,3 +337,43 @@ def test_limit_short_circuits_before_second_registry() -> None:
     configured_hosts_full = [host for host, _tls, _ca in reg_full.configured]
     assert _HOST1 in configured_hosts_full
     assert _HOST2 in configured_hosts_full, "without a limit, the second host IS logged in"
+
+
+def test_audit_of_a_path_prefixed_registry_walks_only_its_namespace() -> None:
+    reg = FakeRegistryPort(
+        repositories={"ghcr.io": ["acme/redis", "other/redis"]},
+        tags={"ghcr.io/acme/redis": ["7.2.0"], "ghcr.io/other/redis": ["7.2.0"]},
+        annotations={
+            "ghcr.io/acme/redis:7.2.0": {"io.knock.policy": "redis"},
+            "ghcr.io/other/redis:7.2.0": {"io.knock.policy": "not-ours"},
+        },
+    )
+    report = audit_coverage(
+        registry=reg,
+        roster={"ghcr": RegistryConfig(host="ghcr.io/acme")},
+        only_registry=None,
+        label_prefix="io.knock",
+    )
+    assert [o.image_ref for o in report.outcomes] == ["ghcr.io/acme/redis:7.2.0"]
+    assert report.counts.scanned == 1
+
+
+_FALLBACK_TAG = "sha256-3821e65d0f6c0d2b0a2a3f5c6e7d8a9b0c1d2e3f405162738495a6b7c8d9e0f1"
+
+
+def test_referrers_fallback_tags_are_not_audited_as_images() -> None:
+    # On a registry without the referrers API, knock's own SBOM/signature referrers are
+    # stored under a `sha256-<digest>` tag in the subject's repo. Counting them as images
+    # would report a SILENTLY WRONG coverage number (every one of them "uncovered").
+    reg = FakeRegistryPort(
+        repositories={_HOST: ["lib/redis"]},
+        tags={_REPO: ["7.1", _FALLBACK_TAG]},
+        annotations={f"{_REPO}:7.1": {"io.knock.policy": "redis"}},
+    )
+    report = audit_coverage(
+        registry=reg, roster=_ROSTER, only_registry=None, label_prefix="io.knock"
+    )
+    assert [o.image_ref for o in report.outcomes] == [f"{_REPO}:7.1"]
+    assert report.counts.scanned == 1
+    assert report.counts.uncovered == 0
+    assert audit_exit_code(report, fail_on_uncovered=True) == 0

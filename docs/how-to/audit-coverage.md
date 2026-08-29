@@ -1,7 +1,7 @@
 ---
 title: "Audit coverage"
 description: "Find images that lack the stamp with knock audit, and gate CI on coverage, signing, or SBOM presence."
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 Once images are flowing through knock, **`knock audit`** answers the coverage-gate question:
@@ -24,8 +24,10 @@ uv run knock audit --fail-on-uncovered    # exit 1 if uncovered > 0
 ```
 
 An image counts as covered when it carries the knock lineage annotation (`io.knock.policy`, or
-the OCI `org.opencontainers.image.base.digest` when `KNOCK_LABEL_PREFIX` is empty). `KNOCK_LOG_FORMAT=json`
-emits the full structured `CoverageReport`.
+the OCI `org.opencontainers.image.base.digest` when `KNOCK_LABEL_PREFIX` is empty). That
+`base.digest` fallback only applies to image-derived artifacts; a source-derived artifact (e.g.
+a git-ingested skill) has no base image, so it requires a non-empty `KNOCK_LABEL_PREFIX` to be
+stamped at all. `KNOCK_LOG_FORMAT=json` emits the full structured `CoverageReport`.
 
 ## The trustworthiness tier
 

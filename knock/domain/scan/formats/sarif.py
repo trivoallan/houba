@@ -10,6 +10,10 @@ from knock.domain.scan.summary import SEVERITY_VALUES as _BUCKETS
 from knock.domain.scan.summary import ScanSummary
 from knock.errors import ScanReportError
 
+# The producer's ruleset fingerprint. Not a count, so it is not in `fact_keys` — it is present
+# only when the report declares one, and is published as the optional `scan.ruleset.hash` key.
+RULESET_HASH_FACT = "ruleset.hash"
+
 
 def _to_float(value: Any) -> float | None:
     try:
@@ -89,6 +93,20 @@ def _classify(result: dict[str, Any], severities: dict[str, float]) -> str:
     return f"vuln.{_level_to_bucket(result.get('level'))}"
 
 
+def _ruleset_hash(run: dict[str, Any], results: list[Any]) -> str | None:
+    """The ruleset fingerprint this run was judged under: run `properties`, else a result's.
+
+    Run level is the canonical home — it survives a breached run, which carries no pass receipt.
+    A producer that declares none yields no fact; knock never fabricates one (see ADR 0020).
+    """
+    bags = [run.get("properties"), *(r.get("properties") for r in results if isinstance(r, dict))]
+    for bag in bags:
+        value = bag.get("ruleset_hash") if isinstance(bag, dict) else None
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
 class SarifMapper(ScanFormatMapper):
     name = "sarif"
     report_media_type = "application/sarif+json"
@@ -115,6 +133,7 @@ class SarifMapper(ScanFormatMapper):
         counts = dict.fromkeys(self.fact_keys, 0)
         tool = ""
         tool_version = ""
+        ruleset_hash: str | None = None
         for run in doc["runs"]:
             if not isinstance(run, dict):
                 continue
@@ -127,9 +146,13 @@ class SarifMapper(ScanFormatMapper):
                 tool_version = driver["version"]
             severities = _rule_severities(driver)
             results = run.get("results")
-            for result in results if isinstance(results, list) else []:
+            results = results if isinstance(results, list) else []
+            for result in results:
                 if isinstance(result, dict):
                     counts[_classify(result, severities)] += 1
+            ruleset_hash = ruleset_hash or _ruleset_hash(run, results)
 
         facts = {k: str(counts[k]) for k in self.fact_keys}
+        if ruleset_hash:
+            facts[RULESET_HASH_FACT] = ruleset_hash
         return ScanSummary(tool=tool, tool_version=tool_version, facts=facts)

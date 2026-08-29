@@ -167,20 +167,141 @@ def test_reconcile_copies_new_tags_and_stamps() -> None:
     report = _run([POLICY], registry=fake)
     assert isinstance(report, RunReport)
     assert fake.logins == [("harbor.corp", "robot", True)]
-    assert ("docker.io/library/redis:7.2.0", "harbor.corp/lib/redis:7.2.0") in fake.copied
-    assert ("docker.io/library/redis:7.3.0", "harbor.corp/lib/redis:7.3.0") in fake.copied
+    assert ("docker.io/library/redis@sha256:a", "harbor.corp/lib/redis:7.2.0") in fake.copied
+    assert ("docker.io/library/redis@sha256:b", "harbor.corp/lib/redis:7.3.0") in fake.copied
     stamped = {ref: ann for ref, ann in fake.annotated}
-    base_digest = stamped["harbor.corp/lib/redis:7.2.0"]["org.opencontainers.image.base.digest"]
-    assert base_digest == "sha256:a"
-    assert stamped["harbor.corp/lib/redis:7.2.0"]["io.knock.owners"] == (
-        "group:default/platform-data"
-    )
-    assert stamped["harbor.corp/lib/redis:7.2.0"]["org.opencontainers.image.title"] == "redis"
-    assert stamped["harbor.corp/lib/redis:7.2.0"]["org.opencontainers.image.vendor"] == (
-        "ACME Platform"
-    )
+    pinned = "harbor.corp/lib/redis@sha256:a"
+    assert stamped[pinned]["org.opencontainers.image.base.digest"] == "sha256:a"
+    assert stamped[pinned]["io.knock.owners"] == "group:default/platform-data"
+    assert stamped[pinned]["org.opencontainers.image.title"] == "redis"
+    assert stamped[pinned]["org.opencontainers.image.vendor"] == "ACME Platform"
     assert ("harbor.corp/lib/redis:7.3.0", "harbor.corp/lib/redis:latest") in fake.copied
     assert report.totals.imported == 2
+
+
+def test_namespaced_destination_carries_the_prefix_once_over_a_bare_host_session() -> None:
+    # A path-prefixed roster host (`ghcr.io/acme`) splits in two: image references compose
+    # from the FULL host, while regctl's registry-level commands (TLS config, login) take
+    # only the bare host. Reconcile is the WRITE side of that invariant and composes its
+    # destination itself, independently of the read-side catalog walk. Swapping `cfg.host`
+    # for `cfg.registry_host` in that composition would publish to `ghcr.io/demo/redis` —
+    # outside the namespace GHCR requires — so pin both halves here.
+    policy = parse_mirror_policy("""
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata: { name: redis-namespaced }
+spec:
+  artifactType: image
+  source: { registry: docker.io, repository: library/redis }
+  imports:
+    - name: v7
+      tags: { includeRegex: "^7\\\\.2\\\\.0$" }
+      destinations: [{ registry: ghcr, project: demo, repository: redis }]
+""")
+    fake = FakeRegistryPort(
+        tags={"docker.io/library/redis": ["7.2.0"], "ghcr.io/acme/demo/redis": []},
+        infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
+    )
+    reconcile_policies(
+        [policy],
+        registry=fake,
+        builder=FakeImageBuilder(),
+        roster={"ghcr": RegistryConfig(host="ghcr.io/acme", username="u", password="p")},
+        ca_certs={},
+        package_mirrors={},
+        build_platform="linux/amd64",
+        now=NOW,
+        label_prefix="io.knock",
+        dry_run_tags=False,
+        dry_run_deletions=False,
+        reporter=FakeReporter(),
+    )
+    # The namespace appears exactly once in the destination — never doubled, never dropped.
+    assert fake.copied == [("docker.io/library/redis@sha256:a", "ghcr.io/acme/demo/redis:7.2.0")]
+    # …and the session behind it was established against the bare host.
+    assert fake.configured == [("ghcr.io", True, None)]
+    assert fake.logins == [("ghcr.io", "u", True)]
+
+
+GIT_POLICY = parse_mirror_policy("""
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata: { name: example-skill }
+spec:
+  artifactType: skill
+  source: { url: "https://github.com/example/agent-skill.git", ref: v1.2.0 }
+  imports:
+    - name: release
+      tags: {}
+      destinations: [{ project: skills, repository: example-skill }]
+""")
+
+
+def test_git_sourced_policy_is_skipped_not_fatal() -> None:
+    # reconcile only knows how to mirror registry sources today; a git-sourced policy
+    # (skill is git-only) sitting in the same worklist must not blow up the whole run
+    # with an InternalError — the registry-sourced policy still reconciles normally,
+    # and the git one is reported as an explicit, non-zero-information skip rather
+    # than silently doing nothing.
+    fake = FakeRegistryPort(
+        tags={
+            "docker.io/library/redis": ["7.2.0"],
+            "harbor.corp/lib/redis": [],
+        },
+        infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
+    )
+    reporter = FakeReporter()
+    report = _run([POLICY, GIT_POLICY], registry=fake, reporter=reporter)
+
+    # The registry-sourced policy reconciled fully, unaffected by its git-sourced sibling.
+    assert ("docker.io/library/redis@sha256:a", "harbor.corp/lib/redis:7.2.0") in fake.copied
+    redis_report = next(p for p in report.policies if p.name == "redis")
+    assert redis_report.status == "ok"
+
+    # The git-sourced policy is reported, not silently absent — with an actionable
+    # reason, and NOT the "bug" exit code an uncaught InternalError would carry.
+    skill_report = next(p for p in report.policies if p.name == "example-skill")
+    assert skill_report.status == "failed"
+    assert skill_report.error is not None
+    assert "git" in skill_report.error.message
+    assert skill_report.error.type != "InternalError"
+
+    assert (
+        "example-skill",
+        "https://github.com/example/agent-skill.git",
+    ) in reporter.policies_started
+    failed_names = [name for name, _err in reporter.failures]
+    assert "example-skill" in failed_names
+    assert all(err.type != "InternalError" for _name, err in reporter.failures)
+
+
+def test_copy_path_pins_the_source_digest_it_stamps() -> None:
+    # TOCTOU: copying by tag lets upstream retag between the plan and the apply, so knock
+    # places bytes A while stamping base.digest = B — the stamp then describes a different
+    # artifact than the one placed. Pin the copy to the digest resolved during planning
+    # (as the rebuild path already does) so placed bytes and stamp are the same artifact.
+    fake = FakeRegistryPort(
+        tags={"docker.io/library/redis": ["7.2.0"], "harbor.corp/lib/redis": []},
+        infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
+    )
+    _run([POLICY], registry=fake)
+    src_ref = next(s for s, d in fake.copied if d == "harbor.corp/lib/redis:7.2.0")
+    ((_ref, stamp),) = fake.annotated
+    stamped_digest = stamp["org.opencontainers.image.base.digest"]
+    assert src_ref == f"docker.io/library/redis@{stamped_digest}"
+
+
+def test_annotate_pins_the_placed_digest_not_the_mutable_tag() -> None:
+    # Second half of the same TOCTOU. The copy is digest-pinned now, but annotating
+    # `dest:tag` re-resolves a tag any concurrent writer can move between the copy and the
+    # stamp — knock would then stamp its provenance onto bytes it never placed. Stamp the
+    # digest the copy placed instead; the tag is published from the annotated result.
+    fake = FakeRegistryPort(
+        tags={"docker.io/library/redis": ["7.2.0"], "harbor.corp/lib/redis": []},
+        infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
+    )
+    _run([POLICY], registry=fake)
+    assert "harbor.corp/lib/redis@sha256:a" in [ref for ref, _ in fake.annotated]
 
 
 def test_reconcile_dry_run_tags_skips_mutations() -> None:
@@ -250,10 +371,10 @@ def test_reconcile_updates_changed_stable_tag() -> None:
     )
     report = _run([POLICY], registry=fake)
     assert report.totals.updated == 1
-    assert ("docker.io/library/redis:7.2.0", "harbor.corp/lib/redis:7.2.0") in fake.copied
+    assert ("docker.io/library/redis@sha256:NEW", "harbor.corp/lib/redis:7.2.0") in fake.copied
     stamped = {ref: ann for ref, ann in fake.annotated}
     assert (
-        stamped["harbor.corp/lib/redis:7.2.0"]["org.opencontainers.image.base.digest"]
+        stamped["harbor.corp/lib/redis@sha256:NEW"]["org.opencontainers.image.base.digest"]
         == "sha256:NEW"
     )
 
@@ -273,7 +394,7 @@ def test_reconcile_idempotent_when_unchanged() -> None:
     assert report.totals.imported == 0
     assert report.totals.updated == 0
     # No cross-registry copy (source→mirror): the tag is up-to-date; idempotent.
-    assert ("docker.io/library/redis:7.2.0", "harbor.corp/lib/redis:7.2.0") not in fake.copied
+    assert [s for s, _ in fake.copied if s.startswith("docker.io/")] == []
 
 
 def test_reconcile_deletes_orphan_stamped_tag() -> None:
@@ -692,7 +813,7 @@ def test_reconcile_collects_partial_tag_failure() -> None:
     assert policy.status == "partial"
     assert policy.totals.imported == 1
     assert policy.totals.failed == 1
-    assert ("docker.io/library/redis:7.2.0", "harbor.corp/lib/redis:7.2.0") in fake.copied
+    assert ("docker.io/library/redis@sha256:a", "harbor.corp/lib/redis:7.2.0") in fake.copied
     ops = [op for t in policy.targets for v in t.variants for op in v.operations]
     failed = [op for op in ops if op.error is not None]
     assert [op.out_tag for op in failed] == ["7.3.0"]
@@ -897,3 +1018,63 @@ def test_stamp_omits_revision_when_source_has_none() -> None:
     dest_anns = [ann for ref, ann in fake.annotated]
     assert dest_anns
     assert _OCI_REVISION not in dest_anns[0]
+
+
+_FALLBACK_TAG = "sha256-3821e65d0f6c0d2b0a2a3f5c6e7d8a9b0c1d2e3f405162738495a6b7c8d9e0f1"
+
+
+def test_destination_walk_skips_referrers_fallback_tags() -> None:
+    # Registries without the referrers API (GHCR, older Harbor/ECR) store referrer manifests
+    # under a `sha256-<digest>` tag in the SUBJECT's repo, so knock's own first run seeds them
+    # into the destination tag list. They are not images — `inspect` fails on them ("platform
+    # not found") — which made a second reconcile into such a registry impossible.
+    # `infos` is seeded ONLY for the real tag: reaching the fallback tag raises from the fake.
+    fake = FakeRegistryPort(
+        tags={
+            "docker.io/library/redis": ["7.2.0"],
+            "harbor.corp/lib/redis": ["7.2.0", _FALLBACK_TAG],
+        },
+        infos={
+            "docker.io/library/redis:7.2.0": _info("sha256:same"),
+            "harbor.corp/lib/redis:7.2.0": _info(
+                "sha256:mirror", {"org.opencontainers.image.base.digest": "sha256:same"}
+            ),
+        },
+    )
+    report = _run([POLICY], registry=fake)
+    # The real tag is up-to-date → idempotent, and the fallback tag is neither an orphan
+    # to delete nor an image to inspect.
+    assert report.status == "ok"
+    assert report.totals.imported == 0
+    assert report.totals.updated == 0
+    assert report.totals.deleted == 0
+    assert fake.deleted == []
+
+
+def test_source_listing_skips_referrers_fallback_tags() -> None:
+    # Same schema on the SOURCE side: a `sha256-<digest>` tag is never an image a policy
+    # means to mirror, so it must not survive into selection (here `semverOnly: false`
+    # would otherwise let it through).
+    policy = parse_mirror_policy("""
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata: { name: busybox }
+spec:
+  artifactType: image
+  source: { registry: docker.io, repository: library/busybox }
+  imports:
+    - name: all
+      tags: { semverOnly: false }
+      destinations: [{ project: lib, repository: busybox }]
+""")
+    fake = FakeRegistryPort(
+        tags={
+            "docker.io/library/busybox": ["1.38.0", _FALLBACK_TAG],
+            "harbor.corp/lib/busybox": [],
+        },
+        infos={"docker.io/library/busybox:1.38.0": _info("sha256:a")},
+    )
+    report = _run([policy], registry=fake)
+    assert report.status == "ok"
+    assert fake.copied == [("docker.io/library/busybox@sha256:a", "harbor.corp/lib/busybox:1.38.0")]
+    assert report.totals.imported == 1

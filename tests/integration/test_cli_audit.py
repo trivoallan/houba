@@ -97,3 +97,30 @@ def test_audit_limit_caps_scanned(monkeypatch: pytest.MonkeyPatch, fake_bin_path
     assert result.exit_code == 0, result.stdout
     data = json.loads(result.stdout)
     assert data["counts"]["scanned"] == 1
+
+
+def test_audit_of_a_path_prefixed_registry_uses_the_bare_host_and_walks_only_its_namespace(
+    monkeypatch: pytest.MonkeyPatch, fake_bin_path: Path, tmp_path: Path
+) -> None:
+    log = tmp_path / "regctl.log"
+    monkeypatch.setenv("PATH", f"{fake_bin_path}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv(
+        "KNOCK_REGISTRIES",
+        json.dumps({"ghcr": {"host": "ghcr.io/acme", "username": "u", "password": "p"}}),
+    )
+    monkeypatch.setenv("KNOCK_LOG_FORMAT", "json")
+    monkeypatch.setenv("FAKE_REGCTL_SCENARIO", "ghcr-namespaced")
+    monkeypatch.setenv("FAKE_REGCTL_LOG", str(log))
+
+    result = runner.invoke(app, ["audit"])
+    assert result.exit_code == 0, result.stdout
+
+    argv = log.read_text().splitlines()
+    assert "registry login --user u --pass-stdin ghcr.io" in argv
+    assert "repo ls ghcr.io" in argv
+    # the namespace filter is applied to the catalog, not to the catalog request
+    assert any("ghcr.io/acme/redis" in line for line in argv)
+    # Matched on the bare `other/redis`, not on a composed ref: the pre-filter bug emitted
+    # the out-of-namespace repo as `ghcr.io/acme/other/redis`, so pinning the composed
+    # `ghcr.io/other/redis` would have stayed green against the very shape it guards.
+    assert not any("other/redis" in line for line in argv)

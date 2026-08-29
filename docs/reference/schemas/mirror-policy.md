@@ -13,8 +13,15 @@ sidebar_position: 1
 - [4. Property `spec`](#spec)
   - [4.1. Property `artifactType`](#spec_artifactType)
   - [4.2. Property `source`](#spec_source)
-    - [4.2.1. Property `registry`](#spec_source_registry)
-    - [4.2.2. Property `repository`](#spec_source_repository)
+    - [4.2.1. Property `RegistrySource`](#spec_source_anyOf_i0)
+      - [4.2.1.1. Property `registry`](#spec_source_anyOf_i0_registry)
+      - [4.2.1.2. Property `repository`](#spec_source_anyOf_i0_repository)
+    - [4.2.2. Property `GitSource`](#spec_source_anyOf_i1)
+      - [4.2.2.1. Property `url`](#spec_source_anyOf_i1_url)
+      - [4.2.2.2. Property `ref`](#spec_source_anyOf_i1_ref)
+      - [4.2.2.3. Property `path`](#spec_source_anyOf_i1_path)
+        - [4.2.2.3.1. Property `item 0`](#spec_source_anyOf_i1_path_anyOf_i0)
+        - [4.2.2.3.2. Property `item 1`](#spec_source_anyOf_i1_path_anyOf_i1)
   - [4.3. Property `deletionMode`](#spec_deletionMode)
     - [4.3.1. Property `DeletionMode`](#spec_deletionMode_anyOf_i0)
     - [4.3.2. Property `item 1`](#spec_deletionMode_anyOf_i1)
@@ -223,7 +230,7 @@ Specific value: `"MirrorPolicy"`
 | Property                              | Pattern | Type             | Deprecated | Definition              | Title/Description                                                               |
 | ------------------------------------- | ------- | ---------------- | ---------- | ----------------------- | ------------------------------------------------------------------------------- |
 | + [artifactType](#spec_artifactType ) | No      | enum (of string) | No         | In #/$defs/ArtifactType | ArtifactType                                                                    |
-| + [source](#spec_source )             | No      | object           | No         | In #/$defs/Source       | Source                                                                          |
+| + [source](#spec_source )             | No      | Combination      | No         | -                       | Source                                                                          |
 | - [deletionMode](#spec_deletionMode ) | No      | Combination      | No         | -                       | Policy-level deletion mode; \`null\` ⇒ defer to the destination/global cascade. |
 | - [defaults](#spec_defaults )         | No      | Combination      | No         | -                       | Defaults inherited by every import.                                             |
 | + [imports](#spec_imports )           | No      | array            | No         | -                       | Imports                                                                         |
@@ -238,32 +245,48 @@ Specific value: `"MirrorPolicy"`
 | **Required**   | Yes                  |
 | **Defined in** | #/$defs/ArtifactType |
 
-**Description:** Artifact kind: `image` | `helmChart` | `generic`.
+**Description:** Artifact kind: `image` | `helmChart` | `generic` | `skill`.
 
 Must be one of:
 * "image"
 * "helmChart"
 * "generic"
+* "skill"
 
 ### 4.2. Property `source` {#spec_source}
 
 **Title:** Source
 
-|                           |                |
-| ------------------------- | -------------- |
-| **Type**                  | `object`       |
-| **Required**              | Yes            |
-| **Additional properties** | Not allowed    |
-| **Defined in**            | #/$defs/Source |
+|                           |                  |
+| ------------------------- | ---------------- |
+| **Type**                  | `combining`      |
+| **Required**              | Yes              |
+| **Additional properties** | Any type allowed |
 
-**Description:** Upstream source registry + repository.
+**Description:** Upstream source: a registry, or a git repository.
 
-| Property                                 | Pattern | Type   | Deprecated | Definition | Title/Description |
-| ---------------------------------------- | ------- | ------ | ---------- | ---------- | ----------------- |
-| + [registry](#spec_source_registry )     | No      | string | No         | -          | Registry          |
-| + [repository](#spec_source_repository ) | No      | string | No         | -          | Repository        |
+| Any of(Option)                          |
+| --------------------------------------- |
+| [RegistrySource](#spec_source_anyOf_i0) |
+| [GitSource](#spec_source_anyOf_i1)      |
 
-#### 4.2.1. Property `registry` {#spec_source_registry}
+#### 4.2.1. Property `RegistrySource` {#spec_source_anyOf_i0}
+
+**Title:** RegistrySource
+
+|                           |                        |
+| ------------------------- | ---------------------- |
+| **Type**                  | `object`               |
+| **Required**              | No                     |
+| **Additional properties** | Not allowed            |
+| **Defined in**            | #/$defs/RegistrySource |
+
+| Property                                          | Pattern | Type   | Deprecated | Definition | Title/Description |
+| ------------------------------------------------- | ------- | ------ | ---------- | ---------- | ----------------- |
+| + [registry](#spec_source_anyOf_i0_registry )     | No      | string | No         | -          | Registry          |
+| + [repository](#spec_source_anyOf_i0_repository ) | No      | string | No         | -          | Repository        |
+
+##### 4.2.1.1. Property `registry` {#spec_source_anyOf_i0_registry}
 
 **Title:** Registry
 
@@ -274,7 +297,7 @@ Must be one of:
 
 **Description:** Source registry host, e.g. `docker.io`.
 
-#### 4.2.2. Property `repository` {#spec_source_repository}
+##### 4.2.1.2. Property `repository` {#spec_source_anyOf_i0_repository}
 
 **Title:** Repository
 
@@ -284,6 +307,78 @@ Must be one of:
 | **Required** | Yes      |
 
 **Description:** Source repository, e.g. `library/redis`.
+
+#### 4.2.2. Property `GitSource` {#spec_source_anyOf_i1}
+
+**Title:** GitSource
+
+|                           |                   |
+| ------------------------- | ----------------- |
+| **Type**                  | `object`          |
+| **Required**              | No                |
+| **Additional properties** | Not allowed       |
+| **Defined in**            | #/$defs/GitSource |
+
+| Property                              | Pattern | Type        | Deprecated | Definition | Title/Description |
+| ------------------------------------- | ------- | ----------- | ---------- | ---------- | ----------------- |
+| + [url](#spec_source_anyOf_i1_url )   | No      | string      | No         | -          | Url               |
+| - [ref](#spec_source_anyOf_i1_ref )   | No      | string      | No         | -          | Ref               |
+| - [path](#spec_source_anyOf_i1_path ) | No      | Combination | No         | -          | Path              |
+
+##### 4.2.2.1. Property `url` {#spec_source_anyOf_i1_url}
+
+**Title:** Url
+
+|              |          |
+| ------------ | -------- |
+| **Type**     | `string` |
+| **Required** | Yes      |
+
+**Description:** Upstream git repository URL, e.g. `https://github.com/o/r.git`.
+
+##### 4.2.2.2. Property `ref` {#spec_source_anyOf_i1_ref}
+
+**Title:** Ref
+
+|              |          |
+| ------------ | -------- |
+| **Type**     | `string` |
+| **Required** | No       |
+| **Default**  | `"HEAD"` |
+
+**Description:** Branch, tag, or commit to ingest. Resolved to an immutable commit sha.
+
+##### 4.2.2.3. Property `path` {#spec_source_anyOf_i1_path}
+
+**Title:** Path
+
+|                           |                  |
+| ------------------------- | ---------------- |
+| **Type**                  | `combining`      |
+| **Required**              | No               |
+| **Additional properties** | Any type allowed |
+| **Default**               | `null`           |
+
+**Description:** Sub-directory holding the artifact; the repository root when omitted.
+
+| Any of(Option)                                |
+| --------------------------------------------- |
+| [item 0](#spec_source_anyOf_i1_path_anyOf_i0) |
+| [item 1](#spec_source_anyOf_i1_path_anyOf_i1) |
+
+###### 4.2.2.3.1. Property `item 0` {#spec_source_anyOf_i1_path_anyOf_i0}
+
+|              |          |
+| ------------ | -------- |
+| **Type**     | `string` |
+| **Required** | No       |
+
+###### 4.2.2.3.2. Property `item 1` {#spec_source_anyOf_i1_path_anyOf_i1}
+
+|              |        |
+| ------------ | ------ |
+| **Type**     | `null` |
+| **Required** | No     |
 
 ### 4.3. Property `deletionMode` {#spec_deletionMode}
 

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from knock.domain.scan.refs import pin_to_digest, registry_host
+from knock.domain.scan.refs import (
+    is_referrers_fallback_tag,
+    pin_to_digest,
+    registry_host,
+)
 
 D = "sha256:newdigest"
 
@@ -43,3 +47,35 @@ def test_registry_host_single_org_segment_is_none() -> None:
 
 def test_registry_host_digest_pinned_ref() -> None:
     assert registry_host("harbor.corp/lib/redis@sha256:abc") == "harbor.corp"
+
+
+_FALLBACK = "sha256-2f4da11ec2ed0fccf8e93186bf9bdd7b7115a649a0b954c1a09f776d5199174d"
+
+
+def test_referrers_fallback_tag_is_recognised() -> None:
+    assert is_referrers_fallback_tag(_FALLBACK) is True
+
+
+def test_ordinary_tags_are_not_fallback_tags() -> None:
+    for tag in ("1.38.0", "latest", "bookworm-slim-eu"):
+        assert is_referrers_fallback_tag(tag) is False
+
+
+def test_too_few_hex_digits_is_not_a_fallback_tag() -> None:
+    assert is_referrers_fallback_tag("sha256-" + "a" * 63) is False
+
+
+def test_too_many_hex_digits_is_not_a_fallback_tag() -> None:
+    assert is_referrers_fallback_tag("sha256-" + "a" * 65) is False
+
+
+def test_uppercase_hex_is_not_a_fallback_tag() -> None:
+    assert is_referrers_fallback_tag("sha256-" + "A" * 64) is False
+
+
+def test_other_digest_algorithms_are_not_recognised() -> None:
+    assert is_referrers_fallback_tag("sha512-" + "a" * 64) is False
+
+
+def test_merely_containing_the_prefix_is_not_a_fallback_tag() -> None:
+    assert is_referrers_fallback_tag("v1-sha256-" + "a" * 64) is False

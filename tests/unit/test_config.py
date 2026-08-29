@@ -416,6 +416,70 @@ def test_match_registry_by_host_empty_roster_returns_none() -> None:
     assert match_registry_by_host("harbor.corp/x:1", {}) is None
 
 
+def test_match_finds_a_path_prefixed_entry_from_a_ref_in_its_namespace() -> None:
+    roster = {"ghcr": RegistryConfig(host="ghcr.io/acme")}
+    match = match_registry_by_host("ghcr.io/acme/demo/redis:7.2.0", roster)
+    assert match is not None and match[0] == "ghcr"
+
+
+def test_match_rejects_a_ref_in_a_sibling_namespace() -> None:
+    roster = {"ghcr": RegistryConfig(host="ghcr.io/acme")}
+    assert match_registry_by_host("ghcr.io/acme-staging/demo/redis:7.2.0", roster) is None
+
+
+def test_match_prefers_the_more_specific_entry_over_a_bare_one() -> None:
+    roster = {
+        "bare": RegistryConfig(host="ghcr.io"),
+        "ns": RegistryConfig(host="ghcr.io/acme"),
+    }
+    match = match_registry_by_host("ghcr.io/acme/demo/redis:7.2.0", roster)
+    assert match is not None and match[0] == "ns"
+
+
+def test_match_falls_back_to_the_bare_entry_outside_any_namespace() -> None:
+    roster = {
+        "bare": RegistryConfig(host="ghcr.io"),
+        "ns": RegistryConfig(host="ghcr.io/acme"),
+    }
+    match = match_registry_by_host("ghcr.io/other/demo/redis:7.2.0", roster)
+    assert match is not None and match[0] == "bare"
+
+
+# Nested namespaces (`artifactory.corp/docker-local` alongside
+# `artifactory.corp/docker-local/team`) are a realistic roster shape: a ref inside the
+# inner namespace matches BOTH entries by prefix, so only the longest-host-first sort
+# separates them.
+
+
+def test_match_prefers_the_inner_of_two_nested_namespaces() -> None:
+    roster = {
+        "outer": RegistryConfig(host="ghcr.io/acme"),
+        "inner": RegistryConfig(host="ghcr.io/acme/team"),
+    }
+    match = match_registry_by_host("ghcr.io/acme/team/redis:7.2.0", roster)
+    assert match is not None and match[0] == "inner"
+
+
+def test_match_prefers_the_inner_namespace_whatever_the_roster_order() -> None:
+    # Same roster, opposite insertion order: a regression to plain `roster.items()`
+    # would pass the test above by dict-ordering luck and fail here.
+    roster = {
+        "inner": RegistryConfig(host="ghcr.io/acme/team"),
+        "outer": RegistryConfig(host="ghcr.io/acme"),
+    }
+    match = match_registry_by_host("ghcr.io/acme/team/redis:7.2.0", roster)
+    assert match is not None and match[0] == "inner"
+
+
+def test_match_falls_back_to_the_outer_namespace_outside_the_inner_one() -> None:
+    roster = {
+        "outer": RegistryConfig(host="ghcr.io/acme"),
+        "inner": RegistryConfig(host="ghcr.io/acme/team"),
+    }
+    match = match_registry_by_host("ghcr.io/acme/other/redis:7.2.0", roster)
+    assert match is not None and match[0] == "outer"
+
+
 # ---------------------------------------------------------------------------
 # Task 9 — KNOCK_SCAN_REDIS config + loud flat-REDIS_* migration error
 # ---------------------------------------------------------------------------
@@ -476,3 +540,61 @@ def test_scan_redis_addr_without_port_is_rejected(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("KNOCK_SCAN_REDIS", '{"addr": "localhost"}')
     with pytest.raises(ValidationError, match="addr must be host:port"):
         scan_redis_from_env()
+
+
+# ---------------------------------------------------------------------------
+# RegistryConfig decomposes a path-prefixed host
+# ---------------------------------------------------------------------------
+
+
+def test_registry_host_strips_the_path_prefix() -> None:
+    cfg = RegistryConfig(host="ghcr.io/acme")
+    assert cfg.registry_host == "ghcr.io"
+    assert cfg.path_prefix == "acme"
+
+
+def test_a_bare_host_has_no_path_prefix() -> None:
+    cfg = RegistryConfig(host="harbor.corp:443")
+    assert cfg.registry_host == "harbor.corp:443"
+    assert cfg.path_prefix == ""
+
+
+def test_a_multi_segment_prefix_is_kept_whole() -> None:
+    cfg = RegistryConfig(host="artifactory.corp/docker-local/team")
+    assert cfg.registry_host == "artifactory.corp"
+    assert cfg.path_prefix == "docker-local/team"
+
+
+def test_host_rejects_a_scheme() -> None:
+    with pytest.raises(ValidationError, match="must not carry a scheme"):
+        RegistryConfig(host="https://ghcr.io/acme")
+
+
+def test_host_rejects_a_trailing_slash() -> None:
+    with pytest.raises(ValidationError, match="must not end with"):
+        RegistryConfig(host="ghcr.io/acme/")
+
+
+def test_host_rejects_a_leading_slash() -> None:
+    with pytest.raises(ValidationError, match="must not start with"):
+        RegistryConfig(host="/acme")
+
+
+def test_host_rejects_an_empty_value() -> None:
+    with pytest.raises(ValidationError):
+        RegistryConfig(host="")
+
+
+def test_host_rejects_a_whitespace_only_value() -> None:
+    with pytest.raises(ValidationError, match="must not be empty"):
+        RegistryConfig(host="   ")
+
+
+def test_host_rejects_embedded_whitespace() -> None:
+    with pytest.raises(ValidationError, match="must not contain whitespace"):
+        RegistryConfig(host=" ghcr.io/acme")
+
+
+def test_host_rejects_an_empty_path_segment() -> None:
+    with pytest.raises(ValidationError, match="empty path segment"):
+        RegistryConfig(host="ghcr.io//acme")

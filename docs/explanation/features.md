@@ -12,19 +12,21 @@ reference that specifies it. For *why* the loop is shaped this way, see
 [Architecture at a glance](architecture.md); this page is the *what*.
 
 Everything is driven from one declarative artifact (a [`MirrorPolicy`](../reference/schemas/mirror-policy.md))
-and a handful of CLI verbs: `reconcile · attach · audit · purge · gc`.
+and a handful of CLI verbs: `reconcile · purge · attach · audit · gc · verify · scan · version`.
 
 ```mermaid
 flowchart LR
     pol[MirrorPolicy<br/>declarative]:::decl
     rec[reconcile<br/>place + stamp + SBOM]:::core
     att[attach<br/>scan → referrer + gate]:::core
+    ver[verify<br/>read → pass/fail gate]:::core
     aud[audit<br/>coverage / signed / SBOM]:::core
     pur[purge · gc<br/>lifecycle]:::core
     reg[(Destination<br/>registries)]:::ext
 
     pol --> rec --> reg
     att --> reg
+    ver -.->|reads| reg
     aud -.->|reads| reg
     pur -.->|reclaims| reg
 
@@ -70,7 +72,9 @@ so any scanner reads them for free, and `io.knock.*` keys only for the novel fac
 artifact type, the three-level `policy` / `import` / `variant` identity, the `owners`
 (Backstage entity-refs), and the transform lineage. No location is ever stamped — the same
 digest can live in many registries. The prefix is configurable (`KNOCK_LABEL_PREFIX`); an empty
-prefix emits only the OCI-standard keys. The full contract is the
+prefix emits only the OCI-standard keys for an image-derived artifact — a source-derived
+artifact (e.g. a git-ingested skill) has no base image to anchor that fallback, so it requires
+a non-empty prefix and refuses to stamp under an empty one. The full contract is the
 [provenance-stamp reference](../reference/schemas/mirror-policy.md), and the rationale is in
 [transforms & signed attestations](attestations.md).
 
@@ -97,7 +101,7 @@ unconditional; trust rides the signer. See [transforms & signed attestations](at
 
 ## Enforcement — the front door can say *no*
 
-Two features turn knock from observation into a gate:
+Three features turn knock from observation into a gate:
 
 - **`knock attach`** ingests an upstream scanner's report (SARIF today) and attaches it to the
   image as a **signed OCI referrer** — provenance that *this digest came through the front door*.
@@ -105,6 +109,12 @@ Two features turn knock from observation into a gate:
   any finding at or above the threshold (`critical > high > medium > low > unknown`),
   observational by default. See [Attach a scan report](../how-to/attach-scan.md) and
   [the verify gate](../how-to/verify-gate.md).
+- **`knock verify`** is the **decision** verb: read-only, it evaluates the facts `attach` and
+  `reconcile` already placed on a digest and returns a single verdict — exit 0 = pass,
+  exit 1 = fail. `--require` selects which facts must hold (`scan-pass`, the *signature-verified*
+  scan attestation, plus `stamp` and `sbom`); `--max-severity` sets the finding threshold and
+  `--max-age` a freshness SLA on the signed `attested_at`. It never scans and never writes.
+  See [Gate a promotion or CI step](../how-to/verify-gate.md).
 - **`knock audit`** is the coverage gate: it walks the registries and reports which images do
   **not** carry the stamp — the verifiable front door. Three tiers stack on one read:
   coverage (`--fail-on-uncovered`), **signed** vs merely stamped (`--signed` /

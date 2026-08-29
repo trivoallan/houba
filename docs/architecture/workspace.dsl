@@ -304,11 +304,14 @@ workspace "knock" "Single front door / stamper for external container images." {
             rfRoot -> rfBuild "Syncs the buildkitd app" "ArgoCD"
             rfEso -> rfBao "Reads knock/registries" "vault API" "DataCoupling"
             rfEsObj -> rfEso "Requests the roster Secret" "ESO"
+            rfKnock -> rfEsObj "Reads the registry roster" "env (secretRef)" "DataCoupling"
             rfGit -> rfPolicyRepo "Pulls policies" "git"
             rfBlast -> rfDest "Reads provenance stamps" "regctl" "DataCoupling"
             rfScanAttach -> rfDest "Fetches the SBOM referrer; attaches grype's SARIF" "regctl" "DataCoupling"
             rfBlast -> rfPausePods "Lists pods, joins digest -> cluster (kube API)" "kubectl / kube API"
             rfGc -> rfDest "Collects superseded scan referrers" "regctl" "DataCoupling"
+            rfPublishSbom -> rfDest "Fetches the CycloneDX SBOM referrer" "regctl" "DataCoupling"
+            rfPublishSbom -> rfDt "Uploads the SBOM" "Dependency-Track API" "DataCoupling"
         }
 
         # ── Brownfield — drop-in to an existing intake (make demo-mongobleed / make local).
@@ -349,6 +352,45 @@ workspace "knock" "Single front door / stamper for external container images." {
             loBlast -> loDest "Reads provenance stamps" "regctl" "DataCoupling"
             loBlast -> loPausePods "Lists pods, joins digest -> cluster (kube API)" "kubectl / kube API"
             loGc -> loDest "Collects superseded scan referrers" "regctl" "DataCoupling"
+            loScanAttach -> loDest "Fetches the SBOM referrer; attaches grype's SARIF" "regctl" "DataCoupling"
+            loPublishSbom -> loDest "Fetches the CycloneDX SBOM referrer" "regctl" "DataCoupling"
+            loPublishSbom -> loDt "Uploads the SBOM" "Dependency-Track API" "DataCoupling"
+            loKnock -> loSecret "Reads the registry roster" "env (secretRef)" "DataCoupling"
+        }
+
+        # ── Showcase — the public proof (ADR 0046). A third way knock runs: a CI runner, no
+        #    Kubernetes and no ArgoCD. A scheduled GitHub Actions workflow in a separate thin
+        #    repo (knock-examples) checks the SAME reference policies out of this repo at a
+        #    pinned ref — never copied, so they cannot drift — and publishes stamped, SBOM-
+        #    carrying, keyless-signed images to GHCR for anyone to verify. Coverage (audit /
+        #    gc / purge) is absent by design: GHCR does not implement the OCI catalog API.
+        showcaseEnv = deploymentEnvironment "Showcase — public proof (GitHub Actions -> GHCR)" {
+            deploymentNode "GitHub Actions runner" "ubuntu-latest; weekly showcase run + nightly canary (throwaway namespace, non-blocking)" "GitHub Actions" {
+                shPolicies = infrastructureNode "Pinned policy checkout" "actions/checkout of this repo at KNOCK_VERSION -> docs/examples/reference (busybox copy + debian-tz rebuild). Never copied into the showcase repo: the visitor verifies the exact file on the docs site." "git"
+                deploymentNode "container: knock" "ghcr.io/<owner>/knock:KNOCK_VERSION, pinned in knock.env and bumped by Renovate (the canary builds from main instead)" "Docker" {
+                    shKnock = containerInstance knockCli
+                }
+                deploymentNode "container: buildkitd" "moby/buildkit side container (BUILDKIT_HOST); needed by the debian-tz rebuild path. Pushes on its own behalf, so the GHCR docker config must be mounted for it." "Docker" {
+                    shBuild = softwareSystemInstance buildkit
+                }
+                shBypass = infrastructureNode "Bypass push" "regctl image copy of an image that never came through the front door — the manual counter-example the README's commands fail on." "regctl"
+                shVerify = infrastructureNode "verify.sh" "The README's own commands, replayed against what was just published: read the stamp, list the SBOM referrer, verify the attestation. knock has no transaction, so this is what stops a half-stamped publish from going public." "regctl / cosign"
+            }
+            deploymentNode "GitHub / Sigstore" "Public services backing the proof" "Internet" {
+                shGhcr = softwareSystemInstance destRegistries
+                shSigning = softwareSystemInstance signingService
+                shRekor = softwareSystemInstance transparencyLog
+            }
+            deploymentNode "Internet" "Public upstreams (authenticated: a Docker Hub PAT, else the shared runner IPs are throttled)" "Network" {
+                shSrc = softwareSystemInstance sourceRegistries
+            }
+            # The knock -> upstream / GHCR / buildkit / Fulcio / Rekor edges are implied from the
+            # static model (adRegctl, adBuildkit, adCosign), exactly as in the other two
+            # environments; only the showcase-specific nodes need explicit relationships.
+            shKnock -> shPolicies "Reads the pinned policies" "filesystem" "DataCoupling"
+            shBypass -> shGhcr "Pushes an unstamped, unsigned image" "regctl"
+            shVerify -> shGhcr "Re-reads the stamp and the SBOM referrer" "regctl" "DataCoupling"
+            shVerify -> shRekor "Verifies the attestation identity" "cosign" "DataCoupling"
         }
     }
 
@@ -379,13 +421,18 @@ workspace "knock" "Single front door / stamper for external container images." {
             autolayout lr
         }
 
-        # Two deployment views: the Argo reference (which is the demo) and the local
-        # inner-loop overlay. The same kustomize base underlies both — the demo IS the blueprint.
+        # Three deployment views: the Argo reference (which is the demo), the local inner-loop
+        # overlay, and the public showcase. The same kustomize base underlies the first two —
+        # the demo IS the blueprint. The showcase shares neither: it is knock on a CI runner.
         deployment knock "Greenfield — full GitOps platform (Reference B, advanced)" "DeployReference" "The greenfield reference (Reference B): an Argo App-of-Apps that is both the production blueprint and the kind demo. ESO + OpenBao (wave 0), knock + buildkitd (wave 1); the reference policy (busybox copy + debian rebuild); a throwaway Zot (registry + built-in UI) applied out-of-band. KEDA/Prometheus autoscaling is an optional add-on, not on this path." {
             include *
             autolayout lr
         }
         deployment knock "Brownfield — drop-in to existing intake (make demo-mongobleed / make local)" "DeployLocal" "The brownfield headline runtime: kubectl apply -k, plain Zot, no Argo/ESO operators. Drop-in to an existing cluster intake. Reconciles the same reference policy (copy + rebuild) and renders local, uncommitted manifests." {
+            include *
+            autolayout lr
+        }
+        deployment knock "Showcase — public proof (GitHub Actions -> GHCR)" "DeployShowcase" "The public proof (ADR 0046): a scheduled GitHub Actions workflow in a separate thin repo runs the same reference policies — checked out here at a pinned ref, never copied — and publishes stamped, SBOM-carrying, keyless-signed images to GHCR. verify.sh replays the README's own commands against the result, so a half-stamped publish never goes public. No Kubernetes, no ArgoCD, and no coverage walk: GHCR serves no OCI catalog." {
             include *
             autolayout lr
         }

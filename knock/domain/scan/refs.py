@@ -1,6 +1,24 @@
-"""Pure OCI-reference helpers for the attach path. No I/O."""
+"""Pure OCI-reference helpers: ref rewriting, host extraction, tag classification. No I/O."""
 
 from __future__ import annotations
+
+import re
+
+# The OCI distribution spec's *referrers tag schema*: the fallback a registry without the
+# referrers API uses to store a referrer manifest — tag `<algorithm>-<hex-digest>` derived
+# from the subject's digest. Only sha256 is matched: it is the only algorithm knock has
+# observed in the wild (GHCR, older Harbor/ECR), and a loose pattern risks hiding a real tag.
+_REFERRERS_FALLBACK_TAG = re.compile(r"\Asha256-[0-9a-f]{64}\Z")
+
+
+def is_referrers_fallback_tag(tag: str) -> bool:
+    """True iff `tag` is a referrers-tag-schema fallback tag, not a real image tag.
+
+    Registries lacking the referrers API (GHCR, older Harbor/ECR) push referrer manifests
+    under such tags into the subject's own repository, so they surface in every `tag ls`.
+    They are never images: inspecting one fails ("platform not found").
+    """
+    return _REFERRERS_FALLBACK_TAG.match(tag) is not None
 
 
 def pin_to_digest(ref: str, digest: str) -> str:

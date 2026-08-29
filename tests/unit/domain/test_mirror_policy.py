@@ -11,7 +11,7 @@ from knock.domain.mirror_policy import (
     Destination,
     ImportProfile,
     MirrorPolicy,
-    Source,
+    RegistrySource,
     Spec,
     TagSelection,
     TransformStep,
@@ -23,7 +23,7 @@ from knock.errors import PolicyValidationError
 
 
 def test_source_parses() -> None:
-    s = Source.model_validate({"registry": "docker.io", "repository": "library/redis"})
+    s = RegistrySource.model_validate({"registry": "docker.io", "repository": "library/redis"})
     assert s.registry == "docker.io"
     assert s.repository == "library/redis"
 
@@ -49,7 +49,7 @@ def test_artifact_type_values() -> None:
 
 def test_unknown_field_is_rejected() -> None:
     with pytest.raises(ValidationError):
-        Source.model_validate({"registry": "docker.io", "repository": "r", "typo": 1})
+        RegistrySource.model_validate({"registry": "docker.io", "repository": "r", "typo": 1})
 
 
 def test_tag_selection_defaults() -> None:
@@ -193,6 +193,7 @@ def test_spec_minimal() -> None:
         }
     )
     assert spec.artifact_type is ArtifactType.image
+    assert isinstance(spec.source, RegistrySource)
     assert spec.source.repository == "library/redis"
     assert len(spec.imports) == 1
 
@@ -386,4 +387,20 @@ def test_malformed_owner_rejected() -> None:
             "  artifactType: image\n"
             "  source: {registry: docker.io, repository: library/redis}\n"
             "  imports: [{name: v, tags: {}, owners: ['bad owner!']}]\n"
+        )
+
+
+def test_owner_with_a_trailing_newline_rejected() -> None:
+    """`$` matches just before a final newline; `\\Z` does not.
+
+    An owner ref reaches an OCI annotation value through _lineage_annotations, so a
+    trailing newline accepted here would be carried into a published label.
+    """
+    with pytest.raises(PolicyValidationError):
+        parse_mirror_policy(
+            "apiVersion: knock.io/v1alpha1\nkind: MirrorPolicy\nmetadata: {name: x}\n"
+            "spec:\n"
+            "  artifactType: image\n"
+            "  source: {registry: docker.io, repository: library/redis}\n"
+            '  imports: [{name: v, tags: {}, owners: ["payments\\n"]}]\n'
         )

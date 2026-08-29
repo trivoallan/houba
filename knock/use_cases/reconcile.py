@@ -38,7 +38,13 @@ from knock.domain.lifecycle import (
     build_pending_deletion_annotations,
     parse_pending_mark,
 )
-from knock.domain.mirror_policy import Archive, MirrorPolicy, TransformStep
+from knock.domain.mirror_policy import (
+    Archive,
+    GitSource,
+    MirrorPolicy,
+    RegistrySource,
+    TransformStep,
+)
 from knock.domain.policy_merge import resolve_imports
 from knock.domain.reconcile import (
     MirrorArtifact,
@@ -47,12 +53,13 @@ from knock.domain.reconcile import (
 )
 from knock.domain.retention import resolve_archive
 from knock.domain.sbom import build_sbom_annotations, build_sbom_statement, media_type_for
+from knock.domain.scan.refs import is_referrers_fallback_tag
 from knock.domain.sharding import owns
 from knock.domain.stamp import build_stamp_annotations
 from knock.domain.transforms.base import ResolvedResource, ResolvedStep, ResourceRef
 from knock.domain.transforms.registry import DEFAULT_REGISTRY
 from knock.domain.transforms.render import render, transform_version, validate_transform_steps
-from knock.errors import ConfigError, InternalError, exit_code_for
+from knock.errors import ConfigError, InternalError, UnsupportedSourceError, exit_code_for
 from knock.ports.attestor import AttestorPort
 from knock.ports.image_builder import BuildRequest, ImageBuilderPort
 from knock.ports.registry import ImageInfo, Referrer, RegistryPort
@@ -201,8 +208,55 @@ class _Plan:
     transforms: dict[str, _ResolvedTransform]  # variant name → resolved transform
 
 
-def _source_repo(policy: MirrorPolicy) -> str:
+def _require_registry_source(policy: MirrorPolicy) -> RegistrySource:
+    """Narrow `policy.spec.source` to a `RegistrySource`.
+
+    This use case only reconciles registry-sourced policies: image/helmChart are
+    always registry-sourced, and generic may be either (see mirror_policy.py's
+    asymmetric source/artifactType rule). `reconcile_policies` filters out every
+    git-sourced policy — skill, and any git-sourced generic — before the plan phase
+    even starts, reporting each as skipped (see `_skipped_source_report`), so a git
+    source should never reach this function. If it does, that is a bug in that
+    filter, not a user-input problem: hence `InternalError`.
+    """
     s = policy.spec.source
+    if not isinstance(s, RegistrySource):
+        raise InternalError(
+            f"policy '{policy.metadata.name}' has a git source; "
+            "reconcile only supports registry sources"
+        )
+    return s
+
+
+def _skipped_source_report(policy: MirrorPolicy, reporter: Reporter) -> PolicyReport:
+    """Report and record a policy whose source this use case does not reconcile yet.
+
+    Both source kinds are legitimate `MirrorPolicy` shapes (see mirror_policy.py); this
+    use case just doesn't know how to mirror a git source. Never raises: the whole
+    point is that one such policy must not abort the run for every other policy in the
+    worklist, and must not vanish from the report silently either — an operator needs
+    to see why it did nothing.
+    """
+    source = policy.spec.source
+    assert isinstance(source, GitSource)  # the only non-RegistrySource member of Source
+    exc = UnsupportedSourceError(
+        f"policy '{policy.metadata.name}' is git-sourced; not handled by reconcile"
+    )
+    info = ErrorInfo(type=type(exc).__name__, message=str(exc), exit_code=exit_code_for(exc))
+    reporter.policy_started(policy.metadata.name, source.url)
+    reporter.policy_failed(policy.metadata.name, info)
+    return PolicyReport(
+        name=policy.metadata.name,
+        source=source.url,
+        status="failed",
+        error=info,
+        totals=Counts(),
+        targets=[],
+    )
+
+
+def _source_repo(policy: MirrorPolicy) -> str:
+    s = _require_registry_source(policy)
     return f"{s.registry}/{s.repository}"
 
 
@@ -326,7 +380,8 @@ def _apply_plan(
     sbom_formats: list[str],
     retention_global: Archive | None = None,
 ) -> TargetReport:
-    src_repo = _source_repo(plan.policy)
+    registry_source = _require_registry_source(plan.policy)
+    src_repo = f"{registry_source.registry}/{registry_source.repository}"
     selected = sorted({tag for v in plan.expanded.variants for tag in v.tags})
     source: dict[str, SourceArtifact] = {
         tag: to_source_artifact(registry.inspect(f"{src_repo}:{tag}"), now=now) for tag in selected
@@ -342,7 +397,12 @@ def _apply_plan(
     # BOTH coverage signals (signature + SBOM). Skipped when neither signing nor SBOM is
     # configured — nothing would route to a backfill stage (one fewer registry read per tag).
     need_probe = attestor is not None or bool(sbom_formats)
+    # Registries without the referrers API store referrer manifests under a
+    # `sha256-<digest>` tag in the SUBJECT's repo, so knock's own referrers surface in this
+    # listing. They are not images (`inspect` fails on them) and are never mirror state.
     for out_tag in registry.list_tags(plan.dest_repo):
+        if is_referrers_fallback_tag(out_tag):
+            continue
         info = registry.inspect(f"{plan.dest_repo}:{out_tag}")
         present = (
             {r.artifact_type for r in registry.list_referrers(f"{plan.dest_repo}:{out_tag}")}
@@ -483,26 +543,39 @@ def _apply_plan(
         steps = [s.name for s in w.vplan.transform] or None  # applied steps; None on a copy
         try:
             out_digest: str | None = None
+            dest_ref = f"{plan.dest_repo}:{w.out_tag}"
             if not dry_run_tags:
                 if w.vplan.transform:
                     _build_variant(
                         builder=builder,
                         source_ref=f"{src_repo}@{source[w.src_tag].digest}",
-                        dest_ref=f"{plan.dest_repo}:{w.out_tag}",
+                        dest_ref=dest_ref,
                         resolved=plan.transforms[w.vplan.name],
                         platform=build_platform,
                         work_dir=work_dir,
                         provenance=attestor is not None,
                         tls_verify=plan.config.tls_verify,
                     )
+                    # buildkit's output digest is not known until the tag is resolved, so
+                    # the rebuild path stamps in place.
+                    stamp_ref, publish_as = dest_ref, None
                 else:
-                    registry.copy(f"{src_repo}:{w.src_tag}", f"{plan.dest_repo}:{w.out_tag}")
+                    # Digest-pinned like the rebuild path above: copying by tag would let an
+                    # upstream retag between plan and apply place bytes the stamp below does
+                    # not describe. The destination ref keeps the tag, so the copy applies it.
+                    registry.copy(f"{src_repo}@{source[w.src_tag].digest}", dest_ref)
+                    # A plain copy transfers the manifest byte-for-byte, so the placed digest
+                    # IS the source digest. Stamp that pinned ref and publish the result to
+                    # the tag, rather than re-resolving a tag a concurrent writer could move
+                    # between the copy and the stamp.
+                    stamp_ref = f"{plan.dest_repo}@{source[w.src_tag].digest}"
+                    publish_as = dest_ref
                 out_digest = registry.annotate(
-                    f"{plan.dest_repo}:{w.out_tag}",
+                    stamp_ref,
                     build_stamp_annotations(
                         prefix=label_prefix,
-                        source_registry=plan.policy.spec.source.registry,
-                        source_repository=plan.policy.spec.source.repository,
+                        source_registry=registry_source.registry,
+                        source_repository=registry_source.repository,
                         source_tag=w.src_tag,
                         source_digest=source[w.src_tag].digest,
                         source_revision=source[w.src_tag].revision,
@@ -516,6 +589,7 @@ def _apply_plan(
                         transform_steps=steps,
                         transform_version_value=transform_versions.get(w.vplan.name),
                     ),
+                    publish_as=publish_as,
                 )
                 # SBOM (both paths): scan the placed digest, attach one referrer per
                 # configured format. Inside the try => a generation/attach failure fails
@@ -908,6 +982,15 @@ def reconcile_policies(
         if owns(p.metadata.name, shard_index=shard_index, shard_count=shard_count)
     ]
 
+    # Registry-sourced only past this point: this use case doesn't yet know how to
+    # mirror a git source (skill is git-only; generic may be either — see
+    # mirror_policy.py's asymmetric source/artifactType rule). Split those out BEFORE
+    # the plan phase touches `_source_repo`, so one git-sourced policy in the worklist
+    # can't abort reconciliation for every other policy — it is reported as skipped
+    # instead (see `_skipped_source_report`), and the rest proceed normally.
+    unsupported_policies = [p for p in policies if not isinstance(p.spec.source, RegistrySource)]
+    policies = [p for p in policies if isinstance(p.spec.source, RegistrySource)]
+
     # --- Plan phase (fail-fast): expand, resolve destinations + transforms, collision-check.
     # Transform resolution (unknown cert/mirror names, unreadable cert files) surfaces all
     # config errors here, before ANY mutation. ---
@@ -922,7 +1005,9 @@ def reconcile_policies(
         src_match = match_registry_by_host(src_repo, roster)
         if src_match is not None:
             ensure_registry_session(registry, src_match[1], logged_in)
-        src_tags = registry.list_tags(src_repo)
+        # Drop the referrers-tag-schema fallbacks the same way (see the destination walk):
+        # a `sha256-<digest>` tag is a referrer manifest, never an image to mirror.
+        src_tags = [t for t in registry.list_tags(src_repo) if not is_referrers_fallback_tag(t)]
         policy_plans: list[_Plan] = []
         for resolved in resolve_imports(policy.spec):
             expanded = expand_import(resolved, src_tags)
@@ -958,8 +1043,10 @@ def reconcile_policies(
     detect_alias_collisions(alias_entries)  # fail fast before ANY mutation
 
     # --- Apply phase (isolated per policy). ---
-    reporter.run_started(len(plans_by_policy), mode=mode)
-    policy_reports: list[PolicyReport] = []
+    reporter.run_started(len(plans_by_policy) + len(unsupported_policies), mode=mode)
+    policy_reports: list[PolicyReport] = [
+        _skipped_source_report(p, reporter) for p in unsupported_policies
+    ]
     with ExitStack() as stack:
         executor: ThreadPoolExecutor | None = (
             stack.enter_context(ThreadPoolExecutor(max_workers=max_concurrency))

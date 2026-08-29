@@ -1,7 +1,7 @@
 ---
 title: "Attach a scan result"
 description: "Ingest an upstream SARIF report as a signed OCI referrer with knock attach, using --fail-on as a severity CI gate."
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 knock does not run scanners. A scan is produced **upstream** (your CI, a registry-native
@@ -131,6 +131,10 @@ e.g. `policy.critical`) and `io.knock.scan.policy.passed`, alongside the `io.kno
 buckets. knock keys on the SARIF `kind`, never on the tool name — so any analyzer emitting `kind`
 gets governance bucketing for free. The `--fail-on <severity>` gate acts on `vuln.*` only — policy
 verdicts are reported in the stamp, not gated.
+
+When the report declares a `ruleset_hash`, the stamp also carries `io.knock.scan.ruleset.hash` — the
+fingerprint of the rules the verdict was reached under, so a signed "passed" says *under which
+policy*. See the [SARIF ingestion profile](../reference/sarif-ingestion-profile.md#ruleset-fingerprint).
 
 ### End-to-end: any SARIF analyzer at the front door
 

@@ -1,5 +1,70 @@
 # Changelog
 
+## [0.9.3](https://github.com/trivoallan/knock/compare/v0.9.2...v0.9.3) (2026-08-29)
+
+
+### Bug Fixes
+
+* **domain:** keyless signing works with no Fulcio/Rekor configured ([#252](https://github.com/trivoallan/knock/issues/252)) ([e97031a](https://github.com/trivoallan/knock/commit/e97031a73a36ee20876031f1e783417d56252f52))
+
+
+### Documentation
+
+* **docs:** a how-to for verifying the publicly published stamp ([#251](https://github.com/trivoallan/knock/issues/251)) ([b9df4cf](https://github.com/trivoallan/knock/commit/b9df4cf882fb64b023f9e05cc58dfdcb2685fae1))
+
+## [0.9.2](https://github.com/trivoallan/knock/compare/v0.9.1...v0.9.2) (2026-08-29)
+
+
+### Bug Fixes
+
+* **use_cases:** skip referrers-fallback tags in every tag walk ([#248](https://github.com/trivoallan/knock/issues/248)) ([3186a20](https://github.com/trivoallan/knock/commit/3186a20ccd26c81e95cbde295bd992e7b5522cb4))
+
+## [0.9.1](https://github.com/trivoallan/knock/compare/v0.9.0...v0.9.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **ci:** publish the image again on a freshly cut release ([#246](https://github.com/trivoallan/knock/issues/246)) ([bb42af2](https://github.com/trivoallan/knock/commit/bb42af2fc94900642212ee9a2bcb1de6124b9ca8))
+
+## [0.9.0](https://github.com/trivoallan/knock/compare/v0.8.0...v0.9.0) (2026-08-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* rename houba → knock (knock-oci on PyPI; KNOCK_/io.knock contracts) ([#193](https://github.com/trivoallan/knock/issues/193))
+
+### Features
+
+* **cli:** houba audit --limit — bound the catalog walk for slice benchmarks ([#186](https://github.com/trivoallan/knock/issues/186)) ([b9a2b5a](https://github.com/trivoallan/knock/commit/b9a2b5a8a438e384e088091af73510b1e3c8c2b6))
+* **cli:** houba scan command group as an optional houba[scan] extra (Door 1) ([#190](https://github.com/trivoallan/knock/issues/190)) ([c4b717b](https://github.com/trivoallan/knock/commit/c4b717baf7bd865011409a5e2c1a41022bf4bba7))
+* **cli:** houba verify — read-side gate over signed scan, stamp, and SBOM ([#182](https://github.com/trivoallan/knock/issues/182)) ([6fd93ae](https://github.com/trivoallan/knock/commit/6fd93ae6fe781e52321ac0ee8fdb73053abd8393))
+* **config:** target path-namespaced registries (GHCR, GitLab, Artifactory) ([#245](https://github.com/trivoallan/knock/issues/245)) ([bdd1a57](https://github.com/trivoallan/knock/commit/bdd1a57d2b8aadb2fec9552d2849210d0dad262c))
+* **image:** platform-internal scan/SBOM pipeline — incremental, reconcile-fed reference deployment ([#187](https://github.com/trivoallan/knock/issues/187)) ([43538c5](https://github.com/trivoallan/knock/commit/43538c5292d49ccbcf6e429d4a0a730bc2a2b58f))
+* **image:** rebuild the scan pipeline on Redis Streams (trim-safe, coverage-convergent, operator-triageable) ([#188](https://github.com/trivoallan/knock/issues/188)) ([c46d824](https://github.com/trivoallan/knock/commit/c46d824735b69a3642184f9a7f5f750b240658a8))
+
+
+### Bug Fixes
+
+* **deps:** patch minimatch ReDoS (GHSA-7r86-cg39-jmmj) in website ([#217](https://github.com/trivoallan/knock/issues/217)) ([51b3cef](https://github.com/trivoallan/knock/commit/51b3cef4fddc7d995762b5f99680a138bc1929c6))
+* **use_cases:** pin the copy path to the digest it stamps ([#241](https://github.com/trivoallan/knock/issues/241)) ([6b1d4a4](https://github.com/trivoallan/knock/commit/6b1d4a469322a1f193882f4c0b5c58eaa689bb2a))
+
+
+### Documentation
+
+* **architecture:** make the Structurizr inspection gate green again ([#243](https://github.com/trivoallan/knock/issues/243)) ([55c56b5](https://github.com/trivoallan/knock/commit/55c56b58ef3efdcec970cde9081a0ac62ef0ac02))
+* **docs:** pin the MirrorPolicy ⟂ Warehouse boundary in the Kargo gate spec ([#185](https://github.com/trivoallan/knock/issues/185)) ([11679a8](https://github.com/trivoallan/knock/commit/11679a8a694f69994b3c694206c2e2ec6ae38b35))
+* **docs:** spec for Kargo promotion gate (houba as a third reader) ([#175](https://github.com/trivoallan/knock/issues/175)) ([238032e](https://github.com/trivoallan/knock/commit/238032e73ac40a78d310defd051c145e2a7e613d))
+* **docs:** spec migration-parity demonstrable proof ([#179](https://github.com/trivoallan/knock/issues/179)) ([b18be28](https://github.com/trivoallan/knock/commit/b18be28a6e6d083d65b76e03b64f623f49350c8a))
+* **explanation:** add Features-at-a-glance overview page ([#194](https://github.com/trivoallan/knock/issues/194)) ([ab90c87](https://github.com/trivoallan/knock/commit/ab90c871fde9e0a28a3d56bebef786bcc485a66c))
+* **roadmap:** scope the near-term increment (post-0.8.0) ([#176](https://github.com/trivoallan/knock/issues/176)) ([b5aee30](https://github.com/trivoallan/knock/commit/b5aee30b36b665cad8200cd41700485ef52e4750))
+* **specs:** draft spec for renaming houba → knock (clean break) ([#202](https://github.com/trivoallan/knock/issues/202)) ([1741793](https://github.com/trivoallan/knock/commit/1741793adb151ce611c813bb60c8bb7b82994f85))
+* sync the CLI verb and layer module inventories with the code ([#242](https://github.com/trivoallan/knock/issues/242)) ([1dd19c1](https://github.com/trivoallan/knock/commit/1dd19c1b492fbea0a86e1f6951040c1e238bfe76))
+
+
+### Code Refactoring
+
+* rename houba → knock (knock-oci on PyPI; KNOCK_/io.knock contracts) ([#193](https://github.com/trivoallan/knock/issues/193)) ([11f58ec](https://github.com/trivoallan/knock/commit/11f58ecb08ecf457f6be57b215ee9e732ce7eb9b))
+
 ## [0.8.0](https://github.com/trivoallan/knock/compare/v0.7.0...v0.8.0) (2026-06-23)
 
 

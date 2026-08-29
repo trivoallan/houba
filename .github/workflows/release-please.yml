@@ -46,10 +46,16 @@ jobs:
       # release-please bumps pyproject.toml on the release PR but never re-locks, so
       # uv.lock's root version lags by one release. Re-sync it on that same PR branch.
       # ponytail: re-runs `uv lock` whole; fine — only the root version changes.
+      #
+      # The `|| '{}'` guard is load-bearing. A step's `env:` expressions are evaluated
+      # even when its `if:` is false, and on a *release* run (as opposed to a run that
+      # opens the PR) `outputs.pr` is empty — so an unguarded `fromJSON('')` is a
+      # template error that fails the whole job, which skips `publish` and leaves the
+      # release tagged with no image ever pushed.
       - name: Re-lock uv.lock on the release PR
         if: ${{ steps.release.outputs.pr }}
         env:
-          BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          BRANCH: ${{ fromJSON(steps.release.outputs.pr || '{}').headBranchName }}
         run: |
           git fetch origin "$BRANCH"
           git checkout "$BRANCH"
@@ -80,7 +86,7 @@ jobs:
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
 
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4

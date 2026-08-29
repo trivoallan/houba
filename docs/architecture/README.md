@@ -22,7 +22,8 @@ deployment view per worked example (and the production blueprint):
   orchestrator + the `RunReport` contract), the pure **domain** (policy schema, planning pipeline,
   transform engine, provenance stamp), each **port** (`typing.Protocol` seam), and each **adapter**
   wired to its external system.
-- **Deployment — the reference (which is the demo), plus the local inner-loop overlay.** The
+- **Deployment — the reference (which is the demo), the local inner-loop overlay, and the public
+  showcase.** The
   [reference deployment](../superpowers/specs/2026-06-15-single-argo-reference-deployment-design.md)
   collapses to two views — the same kustomize base underlies both, so the demo IS the blueprint:
   - **[Reference · Argo App-of-Apps](_export/structurizr-DeployReference.mmd)** — the single
@@ -38,6 +39,13 @@ deployment view per worked example (and the production blueprint):
     built-in UI), a plain-secret roster, no operators, and the same Dependency-Track glue for the
     SBOM publish loop (ADR 0035). Reconciles the same reference policy and renders local,
     uncommitted manifests.
+  - **[Showcase · GitHub Actions → GHCR](_export/structurizr-DeployShowcase.mmd)** — the public
+    proof (ADR 0046), and the one deployment sharing neither the cluster nor the kustomize base:
+    knock on a CI runner. A scheduled workflow in a separate thin repo checks the *same* reference
+    policies out of this one at a pinned ref — never copied, so they cannot drift — and publishes
+    stamped, SBOM-carrying, keyless-signed images to GHCR, where the signing identity is the
+    workflow URL itself. `verify.sh` replays the README's own commands against the result, so a
+    half-stamped publish never goes public. No coverage walk: GHCR serves no OCI catalog.
 
   (Optionally a sharded Indexed Job swaps in for the CronJob for horizontal scale-out.) These views
   track the [`deploy/`](../../deploy) manifests and the

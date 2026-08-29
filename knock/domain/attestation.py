@@ -122,6 +122,11 @@ COSIGN_ATTESTATION_ARTIFACT_TYPE = "application/vnd.dev.sigstore.bundle.v0.3+jso
 SIGNING_CONFIG_MEDIA_TYPE = "application/vnd.dev.sigstore.signingconfig.v0.2+json"
 _SIGNING_CONFIG_EPOCH = "1970-01-01T00:00:00Z"
 
+# The public Sigstore instance — the CA and transparency log a blank keyless config
+# resolves to. Only ever consulted for the `keyless` signer (see build_signing_config).
+PUBLIC_FULCIO_URL = "https://fulcio.sigstore.dev"
+PUBLIC_REKOR_URL = "https://rekor.sigstore.dev"
+
 
 def _signing_service(url: str, operator: str) -> dict[str, Any]:
     return {
@@ -133,13 +138,28 @@ def _signing_service(url: str, operator: str) -> dict[str, Any]:
     }
 
 
-def build_signing_config(*, fulcio_url: str, rekor_url: str, operator: str) -> dict[str, Any]:
+def build_signing_config(
+    *, fulcio_url: str, rekor_url: str, operator: str, keyless: bool = False
+) -> dict[str, Any]:
     """Build a cosign v3 signing-config (schema v0.2) as a plain dict.
 
-    Empty (no fulcio, no rekor) is the air-gapped config that lets ``cosign attest
-    --key …`` sign without contacting any service. A non-empty fulcio/rekor URL adds
-    the corresponding service entry (keyless CA / transparency log).
+    A non-empty fulcio/rekor URL adds the corresponding service entry (keyless CA /
+    transparency log). What a *blank* URL means is signer-dependent, and deliberately
+    so — do not collapse the two branches:
+
+    - ``keyless=False`` (the ``kms`` / ``key`` signers): empty stays empty. Those
+      signers already hold a key, need no CA, and an air-gapped deployment depends on
+      ``cosign attest --key …`` contacting no service at all.
+    - ``keyless=True``: there is no key to fall back on, so a config naming no CA is
+      not air-gapped — cosign v3 simply refuses it ("no fulcio URLs provided in
+      signing config"). Blank therefore resolves to the public Sigstore instance,
+      which is what "keyless with no further configuration" has always meant. Rekor
+      is defaulted alongside Fulcio because Sigstore keyless signing is
+      transparency-log-backed: a CA with no log is a half-configuration.
     """
+    if keyless:
+        fulcio_url = fulcio_url or PUBLIC_FULCIO_URL
+        rekor_url = rekor_url or PUBLIC_REKOR_URL
     config: dict[str, Any] = {
         "mediaType": SIGNING_CONFIG_MEDIA_TYPE,
         "rekorTlogConfig": {},

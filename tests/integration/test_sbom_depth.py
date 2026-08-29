@@ -3,9 +3,10 @@ incident class at the right granularity. Permanent guard against silent scanner-
 regression.
 
 Heavyweight (docker to build the fixture + syft + network for apt/Maven). Skipped unless
-both docker and syft are available; run locally / nightly. Mirrors the empirical matrix in
-the SBOM-generation spec (ADR 0029); re-pointed from buildkit-syft-scanner to standalone
-syft when SBOM generation unified on syft (2026-06-17 spec).
+syft is on PATH and the docker daemon actually answers; run locally / nightly. Mirrors the
+empirical matrix in the SBOM-generation spec (ADR 0029); re-pointed from
+buildkit-syft-scanner to standalone syft when SBOM generation unified on syft
+(2026-06-17 spec).
 """
 
 from __future__ import annotations
@@ -21,11 +22,22 @@ from pathlib import Path
 import pytest
 
 
+def _docker_daemon_up() -> bool:
+    """`docker` on PATH is not enough — the daemon has to answer, the way the redis_server
+    fixture pings rather than trusting `which redis-server`."""
+    try:
+        return subprocess.run(["docker", "info"], capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def _has_tools() -> bool:
-    return bool(shutil.which("docker")) and bool(shutil.which("syft"))
+    return bool(shutil.which("syft")) and bool(shutil.which("docker")) and _docker_daemon_up()
 
 
-pytestmark = pytest.mark.skipif(not _has_tools(), reason="needs docker + syft")
+pytestmark = pytest.mark.skipif(
+    not _has_tools(), reason="needs syft on PATH and a reachable docker daemon"
+)
 
 _LOG4J_URL = (
     "https://repo1.maven.org/maven2/org/apache/logging/log4j/log4j-core/2.14.1/"
