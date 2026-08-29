@@ -208,9 +208,9 @@ knock/
 │                usage_oracle, reporter, clock, source
 ├── adapters/    concrete I/O and external formats — regctl_cli, buildkit_cli, cosign_cli,
 │                syft_cli, command_usage, redis_streams, structlog_reporter, system_clock,
-│                marketplace_json, zip_writer, git_cli
+│                marketplace_json, zip_writer, tree_walker, git_cli
 ├── use_cases/   orchestration — loader, reconcile, purge, attach, audit, gc, verify,
-│                scan_worker, registry_session, report
+│                scan_worker, registry_session, report, intake
 └── cli/         Typer entry points — reconcile, purge, attach, audit, gc, verify, scan,
                  version
 ```

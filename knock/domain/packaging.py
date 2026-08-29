@@ -111,8 +111,8 @@ class SourceFile:
     a byte-count check alone can never tell a symlink from a regular file of the same
     length. Both the planner and any writer must refuse symlinks on their own evidence.
 
-    There is no tree-walking adapter in this repo yet, so this rule is written down for
-    whoever builds one.
+    `adapters/tree_walker.py` is the walker that has to honour this; any second one must
+    honour it too, which is why the rule lives here rather than in that module.
     """
 
     path: str

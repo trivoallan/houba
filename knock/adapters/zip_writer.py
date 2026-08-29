@@ -31,10 +31,11 @@ Things this module cannot guarantee on its own:
   `MAX_ARCHIVE_BYTES` before this function ever sees the entry list.
 
 `entries` is expected to be the trusted output of `plan_archive` (or equivalent
-validation), but this adapter is the only component in the repository that actually
-touches the filesystem — `plan_archive` only ever sees descriptions of a tree, never
-the tree itself — so it re-derives, and re-checks, everything it is able to rather than
-trusting the plan on faith:
+validation), but this adapter is the only component that sees the real tree *at write
+time* — `plan_archive` only ever sees descriptions of a tree, never the tree itself, and
+the walker that produced those descriptions (`adapters/tree_walker.py`) ran before any of
+this — so it re-derives, and re-checks, everything it is able to rather than trusting the
+plan on faith:
 - `entry.path` is re-checked with `path_escapes_root` (root escape, and non-canonical
   or duplicate arcnames), raising `ArchiveError`.
 - Each source is checked with `is_symlink()` before it is read, raising `ArchiveError`.

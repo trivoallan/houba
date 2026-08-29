@@ -105,8 +105,9 @@ class AdapterError(KnockError):
 
 
 class ArchiveSourceReadError(AdapterError):
-    """A source file could not be read while writing a planned archive (missing,
-    unreadable, or a broken symlink) — a filesystem fault, not an invalid plan."""
+    """The source tree could not be read — while it was walked into a plan, or while a
+    planned archive was written from it (a directory that cannot be listed, a file that is
+    missing, unreadable, or a broken symlink). A filesystem fault, not an invalid plan."""
 
 
 class ArchiveSizeMismatchError(AdapterError):
