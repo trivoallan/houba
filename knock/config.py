@@ -389,14 +389,21 @@ def match_registry_by_host(
 
     Returns the (name, config) pair, or None when the ref carries no host-like
     segment or no roster entry matches — the signal to fall back to ambient
-    registry config. Never raises (unlike resolve_registry): a non-match is a
-    valid, expected outcome for attach.
+    registry config. An entry carrying a path prefix (`ghcr.io/acme`) matches only
+    refs inside that namespace, and the most specific entry wins: a namespaced entry
+    is preferred over a bare one serving the same registry. Never raises (unlike
+    resolve_registry): a non-match is a valid, expected outcome for attach.
     """
     host = registry_host(ref)
     if host is None:
         return None
-    for name, cfg in roster.items():
-        if cfg.host == host:
+    # Most specific first: a path-prefixed entry (`ghcr.io/acme`) must win over a bare
+    # one (`ghcr.io`) serving the same registry, or the namespaced entry's credentials
+    # are silently skipped and the caller falls back to ambient config.
+    for name, cfg in sorted(roster.items(), key=lambda kv: -len(kv[1].host)):
+        if cfg.registry_host != host:
+            continue
+        if not cfg.path_prefix or ref.startswith(f"{cfg.host}/"):
             return name, cfg
     return None
 

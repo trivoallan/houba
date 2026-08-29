@@ -416,6 +416,35 @@ def test_match_registry_by_host_empty_roster_returns_none() -> None:
     assert match_registry_by_host("harbor.corp/x:1", {}) is None
 
 
+def test_match_finds_a_path_prefixed_entry_from_a_ref_in_its_namespace() -> None:
+    roster = {"ghcr": RegistryConfig(host="ghcr.io/acme")}
+    match = match_registry_by_host("ghcr.io/acme/demo/redis:7.2.0", roster)
+    assert match is not None and match[0] == "ghcr"
+
+
+def test_match_rejects_a_ref_in_a_sibling_namespace() -> None:
+    roster = {"ghcr": RegistryConfig(host="ghcr.io/acme")}
+    assert match_registry_by_host("ghcr.io/acme-staging/demo/redis:7.2.0", roster) is None
+
+
+def test_match_prefers_the_more_specific_entry_over_a_bare_one() -> None:
+    roster = {
+        "bare": RegistryConfig(host="ghcr.io"),
+        "ns": RegistryConfig(host="ghcr.io/acme"),
+    }
+    match = match_registry_by_host("ghcr.io/acme/demo/redis:7.2.0", roster)
+    assert match is not None and match[0] == "ns"
+
+
+def test_match_falls_back_to_the_bare_entry_outside_any_namespace() -> None:
+    roster = {
+        "bare": RegistryConfig(host="ghcr.io"),
+        "ns": RegistryConfig(host="ghcr.io/acme"),
+    }
+    match = match_registry_by_host("ghcr.io/other/demo/redis:7.2.0", roster)
+    assert match is not None and match[0] == "bare"
+
+
 # ---------------------------------------------------------------------------
 # Task 9 — KNOCK_SCAN_REDIS config + loud flat-REDIS_* migration error
 # ---------------------------------------------------------------------------
