@@ -304,6 +304,7 @@ workspace "knock" "Single front door / stamper for external container images." {
             rfRoot -> rfBuild "Syncs the buildkitd app" "ArgoCD"
             rfEso -> rfBao "Reads knock/registries" "vault API" "DataCoupling"
             rfEsObj -> rfEso "Requests the roster Secret" "ESO"
+            rfKnock -> rfEsObj "Reads the registry roster" "env (secretRef)" "DataCoupling"
             rfGit -> rfPolicyRepo "Pulls policies" "git"
             rfBlast -> rfDest "Reads provenance stamps" "regctl" "DataCoupling"
             rfScanAttach -> rfDest "Fetches the SBOM referrer; attaches grype's SARIF" "regctl" "DataCoupling"
