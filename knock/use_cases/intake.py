@@ -1,10 +1,11 @@
 """Ingest a skill from an upstream source and place it as a stamped OCI artifact.
 
-    fetch ──▶ stamp ──▶ walk ──▶ plan_archive ──▶ write_archive ──▶ put_artifact
-      │         │         │           │                                  │
-      │         │         │           └── refuses symlinks, escapes, size, layout
-      │         │         └── excludes VCS metadata; never follows a link
-      │         └── refuses an empty prefix before the tree is packaged
+    fetch ──▶ check ──▶ stamp ──▶ walk ──▶ plan_archive ──▶ write_archive ──▶ put_artifact
+      │         │         │        │            │                                  │
+      │         │         │        │            └── refuses symlinks, escapes, size, layout
+      │         │         │        └── excludes VCS metadata; never follows a link
+      │         │         └── refuses an empty prefix before the tree is packaged
+      │         └── refuses a revision the ref moved to since the caller resolved it
       └── resolves the ref to an immutable revision
 
 A separate use case rather than a branch inside `reconcile`: the intake path shares no
@@ -46,6 +47,7 @@ from pathlib import Path
 
 from knock.domain.packaging import plan_archive
 from knock.domain.stamp import build_git_stamp_annotations
+from knock.errors import SourceRevisionMismatchError
 from knock.ports.archiver import ArchiverPort
 from knock.ports.registry import RegistryPort
 from knock.ports.source import SourcePort
@@ -75,6 +77,7 @@ class IntakeRequest:
     owners: list[str] | None
     vendor: str | None
     workdir: Path
+    expected_revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,7 @@ def intake_skill(
 ) -> IntakeResult:
     """Fetch, package and place one skill. Raises before any push if the tree is unsafe."""
     fetched = source.fetch(request.origin, request.ref, request.workdir, path=request.path)
+    _refuse_a_moved_revision(request, fetched.revision)
     annotations = build_git_stamp_annotations(
         prefix=prefix,
         url=fetched.origin,
@@ -128,4 +132,35 @@ def intake_skill(
         manifest_digest=manifest_digest,
         blob_sha256=blob_sha256,
         revision=fetched.revision,
+    )
+
+
+def _refuse_a_moved_revision(request: IntakeRequest, fetched: str) -> None:
+    """Refuse a tree whose revision is not the one the caller pinned this placement to.
+
+    `ref` is a *moving* name, and this function is called with it long after the caller
+    resolved it: a push to that ref in between hands back a different tree, which would
+    then be placed under a `destination_ref` derived from the earlier revision and
+    stamped with the later one. The tag would assert an identity its bytes do not have —
+    for a product whose whole claim is that its labels can be trusted, not a race to
+    tolerate.
+
+    Checked here rather than in `GitPlanner`, for two reasons. It runs *before* the
+    stamp, the packaging and the push, so a mismatch places nothing at all — a planner
+    check could only report a corruption already in the registry. And every caller
+    inherits it: the reconcile path today, the CLI verb ADR 0048 deferred, the
+    end-to-end test.
+
+    Opt-in (`expected_revision=None` skips it) because it can only be a check for a
+    caller that resolved the ref itself. A caller taking a ref straight from an operator
+    has nothing to compare against and stamps what it fetched, which is honest — it is
+    asserting no earlier identity.
+    """
+    if request.expected_revision is None or request.expected_revision == fetched:
+        return
+    raise SourceRevisionMismatchError(
+        f"upstream ref '{request.ref}' in {request.origin} moved during the run: "
+        f"this placement was planned for revision {request.expected_revision}, but the "
+        f"fetch returned {fetched}. Nothing was placed; re-run to converge on the "
+        f"ref's current revision."
     )

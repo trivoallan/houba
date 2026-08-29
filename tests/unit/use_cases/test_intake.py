@@ -18,13 +18,14 @@ from pathlib import Path
 import pytest
 
 from knock.adapters.local_archiver import LocalArchiver
-from knock.errors import ArchiveError, ConfigError, exit_code_for
+from knock.errors import ArchiveError, ConfigError, SourceRevisionMismatchError, exit_code_for
 from knock.ports.source import FetchedSource
 from knock.use_cases.intake import IntakeRequest, intake_skill
 from tests.fakes.registry import FakeRegistryPort
 
 CREATED = datetime(2026, 8, 29, 12, 0, 0, tzinfo=UTC)
 REVISION = "c0ffee" + "0" * 34
+_MOVED = "decafb" + "1" * 34  # what the ref was pushed to between resolve and fetch
 ORIGIN = "https://github.com/example/agent-skill.git"
 
 # What `git init` + `git remote add` leave in the workdir. The remote URL is the reason
@@ -94,7 +95,9 @@ class RecordingRegistry(FakeRegistryPort):
             return sorted(zf.namelist())
 
 
-def request_for(workdir: Path, *, path: str | None = None) -> IntakeRequest:
+def request_for(
+    workdir: Path, *, path: str | None = None, expected_revision: str | None = None
+) -> IntakeRequest:
     return IntakeRequest(
         origin=ORIGIN,
         ref="v1.0.0",
@@ -106,6 +109,7 @@ def request_for(workdir: Path, *, path: str | None = None) -> IntakeRequest:
         owners=["group:default/platform"],
         vendor=None,
         workdir=workdir,
+        expected_revision=expected_revision,
     )
 
 
@@ -250,6 +254,50 @@ def test_an_unsafe_tree_is_never_pushed(tmp_path: Path) -> None:
             now=CREATED,
         )
     assert registry.artifacts == []
+
+
+def test_a_revision_that_moved_under_the_ref_is_never_pushed(tmp_path: Path) -> None:
+    # The caller resolved the ref to REVISION and derived the destination tag from it;
+    # by the time the fetch ran the ref had been pushed to `_MOVED`. Placing that tree
+    # would stamp `sha-<REVISION>` onto bytes from another commit — an immutable tag
+    # asserting an identity its content does not have, which is the exact failure the
+    # provenance stamp exists to prevent. Refuse, before the archive is even built.
+    registry = RecordingRegistry()
+    with pytest.raises(SourceRevisionMismatchError) as exc_info:
+        intake_skill(
+            request_for(tmp_path / "work", expected_revision=REVISION),
+            source=FakeGitSource(_skill_files(), revision=_MOVED),
+            registry=registry,
+            archiver=LocalArchiver(),
+            prefix="io.knock",
+            now=CREATED,
+        )
+    message = str(exc_info.value)
+    # Both revisions, by name: an operator reading this must not have to guess which
+    # value came from where, nor what happened.
+    assert REVISION in message
+    assert _MOVED in message
+    assert "moved" in message
+    assert exit_code_for(exc_info.value) == 2
+    assert registry.artifacts == []
+
+
+def test_an_unchecked_intake_places_whatever_it_fetched(tmp_path: Path) -> None:
+    # `expected_revision` is opt-in: a caller that never resolved the ref (a future CLI
+    # verb taking a ref straight from an operator) has nothing to compare against, and
+    # stamps the revision the fetch landed on — which is honest, because no tag derived
+    # from an earlier resolve is being asserted.
+    registry = RecordingRegistry()
+    result = intake_skill(
+        request_for(tmp_path / "work"),
+        source=FakeGitSource(_skill_files(), revision=_MOVED),
+        registry=registry,
+        archiver=LocalArchiver(),
+        prefix="io.knock",
+        now=CREATED,
+    )
+    assert result.revision == _MOVED
+    assert registry.artifacts[0][4]["org.opencontainers.image.revision"] == _MOVED
 
 
 def test_an_empty_prefix_refuses_before_anything_is_pushed(tmp_path: Path) -> None:

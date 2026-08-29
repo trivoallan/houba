@@ -27,6 +27,7 @@ __all__ = [
     "ScanReportError",
     "SourceError",
     "SourcePathError",
+    "SourceRevisionMismatchError",
     "SyftError",
     "UnknownFormatError",
     "UnsupportedSourceError",
@@ -149,6 +150,18 @@ class SourceError(AdapterError):
     still fail — network, credentials, a server that refuses the request. An unknown ref
     and a dead network both surface as a non-zero git exit; telling them apart would mean
     parsing git's stderr, so both deliberately stay SourceError.
+    """
+
+
+class SourceRevisionMismatchError(AdapterError):
+    """The upstream ref moved between the plan phase's `resolve` and the apply's `fetch`,
+    so the tree materialised is not the revision the destination tag was derived from.
+
+    Not a `SourceError`: nothing failed to fetch. A sibling of `ArchiveSizeMismatchError`
+    instead, and for the same reason — a concurrent-modification race caught at the write
+    boundary. Exit 2 because the remedy is environmental (re-run against the ref's new
+    tip), not because the operator's policy is wrong; exit 1 here would tell an operator
+    to fix input that is perfectly valid.
     """
 
 

@@ -67,7 +67,16 @@ class _GitPlan:
 
     Carries the resolved revision rather than re-resolving in `apply`: the plan phase
     decided `already_placed` against *this* value, and a second `ls-remote` could
-    answer differently for a moving ref — placing bytes the decision never described.
+    answer differently for a moving ref — planning against one revision and reporting
+    against another.
+
+    That pins the *decision*, not the bytes. `apply` still fetches by `ref`, the moving
+    name, because `SourcePort.fetch` is the only way to materialise a tree and a fetch
+    of a bare sha needs `uploadpack.allowReachableSHA1InWant`, which is off by default
+    on most servers — pinning the fetch would trade a rare corruption for a common hard
+    failure. So the window survives, and is closed on the other side: `revision` is
+    handed to `intake_skill` as `expected_revision`, which compares it against what the
+    fetch actually landed on and refuses before anything is stamped or pushed.
     """
 
     policy: MirrorPolicy
@@ -284,6 +293,7 @@ class GitPlanner:
                         # A subdirectory of the temp dir, never the temp dir itself:
                         # `GitAdapter._claim_workdir` refuses a workdir it did not create.
                         workdir=Path(tmp) / "src",
+                        expected_revision=plan.revision,
                     ),
                     source=self.source,
                     registry=self.registry,

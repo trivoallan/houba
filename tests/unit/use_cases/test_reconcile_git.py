@@ -16,6 +16,7 @@ from knock.adapters.local_archiver import LocalArchiver
 from knock.config import RegistryConfig
 from knock.domain.mirror_policy import MirrorPolicy, parse_mirror_policy
 from knock.errors import InternalError, SourceError
+from knock.ports.source import FetchedSource
 from knock.use_cases.policy_planner import PolicyPlanner
 from knock.use_cases.reconcile_git import REVISION_TAG_PREFIX, GitPlanner
 from knock.use_cases.report import Operation, PolicyReport
@@ -301,6 +302,46 @@ def test_dry_run_neither_fetches_nor_pushes(policy: MirrorPolicy, tmp_path: Path
     assert source.fetched == []
     assert registry.artifacts == []
     assert registry.copied == []
+
+
+class _MovingRef(FakeSourcePort):
+    """A ref that is pushed between the plan phase's `resolve` and the apply's `fetch`.
+
+    Deliberately violates `SourcePort`'s "resolve and fetch must agree" contract, which
+    the shared fake upholds — that is the whole point. The window is real: the plan
+    resolves once per policy, and every destination is fetched later, so the more
+    destinations (and the more concurrency) the wider it gets.
+    """
+
+    def fetch(
+        self, origin: str, ref: str, workdir: Path, *, path: str | None = None
+    ) -> FetchedSource:
+        fetched = super().fetch(origin, ref, workdir, path=path)
+        return FetchedSource(root=fetched.root, revision=_REV_B, origin=fetched.origin)
+
+
+def test_a_ref_that_moves_between_plan_and_apply_places_nothing(
+    policy: MirrorPolicy, tmp_path: Path
+) -> None:
+    # The destination tag is `sha-A`, derived from the plan phase's resolve; the fetch
+    # came back with B. Placing it would put an immutable revision tag on bytes from a
+    # different commit — a tag that lies, in the one product whose whole claim is that
+    # its tags do not. The policy fails loudly instead, and the next run converges on B.
+    source = _MovingRef(revisions={(_URL, _REF): _REV}, tree=_TREE)
+    registry = FakeRegistryPort(tags={_DEST: []})
+    reporter = FakeReporter()
+    planner = _planner(source, registry, work_dir=tmp_path)
+    planner.plan([policy])
+    reports = planner.apply(reporter=reporter, executor=None)
+
+    assert reports[0].status == "failed"
+    assert reports[0].error is not None
+    assert reports[0].error.type == "SourceRevisionMismatchError"
+    assert _REV in reports[0].error.message and _REV_B in reports[0].error.message
+    # Nothing placed under the tag the plan phase promised, and no alias moved onto it.
+    assert registry.artifacts == []
+    assert registry.copied == []
+    assert [name for name, _ in reporter.failures] == ["example-skill"]
 
 
 def test_one_failing_policy_does_not_abort_the_batch(policy: MirrorPolicy, tmp_path: Path) -> None:
