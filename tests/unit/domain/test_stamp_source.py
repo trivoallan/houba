@@ -8,10 +8,15 @@ import pytest
 
 from knock.domain.coverage import is_stamped
 from knock.domain.stamp import build_git_stamp_annotations
-from knock.errors import PolicyValidationError, exit_code_for
+from knock.errors import ConfigError, PolicyValidationError, exit_code_for
 
 CREATED = datetime(2026, 8, 29, 12, 0, 0, tzinfo=UTC)
 REVISION = "c0ffee" + "0" * 34
+
+# A module-level constant, not a mutable default argument: the helper below never
+# mutates `owners`, and a literal-list default is what `ruff` (B006) forbids — this
+# dodges that without collapsing the None-vs-provided distinction (see stamp()).
+_DEFAULT_OWNERS: list[str] = ["group:default/platform"]
 
 
 def stamp(
@@ -21,7 +26,7 @@ def stamp(
     revision: str = REVISION,
     title: str = "agent-skill",
     created: datetime = CREATED,
-    owners: list[str] | None = None,
+    owners: list[str] | None = _DEFAULT_OWNERS,
     vendor: str | None = None,
     artifact_type: str = "skill",
     policy: str = "example-skill",
@@ -34,7 +39,7 @@ def stamp(
         revision=revision,
         title=title,
         created=created,
-        owners=owners if owners is not None else ["group:default/platform"],
+        owners=owners,
         vendor=vendor,
         artifact_type=artifact_type,
         policy=policy,
@@ -66,6 +71,12 @@ def test_carries_the_knock_lineage() -> None:
     assert annotations["io.knock.owners"] == "group:default/platform"
 
 
+def test_owners_omitted_when_none() -> None:
+    # owners=None must reach build_git_stamp_annotations unchanged — the default above
+    # is a fixture convenience, not a translation, so this path is actually exercised.
+    assert "io.knock.owners" not in stamp(owners=None)
+
+
 def test_the_result_reads_back_as_stamped() -> None:
     assert is_stamped(stamp(), prefix="io.knock") is True
 
@@ -77,38 +88,48 @@ def test_vendor_is_omitted_when_absent() -> None:
     )
 
 
-def test_stamps_exactly_the_expected_keys() -> None:
-    # Whole-contract test: the mutations that survived line/branch coverage (a dropped
-    # title, `created` written under the wrong namespace, a spurious extra key) all
-    # change the key *set*, even when no single-key assertion above would notice.
-    assert set(stamp()) == {
-        "org.opencontainers.image.title",
-        "org.opencontainers.image.source",
-        "org.opencontainers.image.revision",
-        "org.opencontainers.image.created",
-        "io.knock.artifact.type",
-        "io.knock.policy",
-        "io.knock.import",
-        "io.knock.variant",
-        "io.knock.owners",
+def test_stamps_exactly_these_annotations() -> None:
+    # Whole-contract test: exact key/value equality, not just a key-set check. A
+    # key-set-only assertion let four value mutations through unnoticed (title<->url,
+    # variant<->import_name, import<->policy swaps, and — the sharp one — a builder
+    # that stamps the same hardcoded `created` timestamp for every artifact).
+    assert stamp() == {
+        "org.opencontainers.image.title": "agent-skill",
+        "org.opencontainers.image.source": "https://github.com/example/agent-skill.git",
+        "org.opencontainers.image.revision": REVISION,
+        "org.opencontainers.image.created": "2026-08-29T12:00:00+00:00",
+        "io.knock.artifact.type": "skill",
+        "io.knock.policy": "example-skill",
+        "io.knock.import": "release",
+        "io.knock.variant": "default",
+        "io.knock.owners": "group:default/platform",
     }
 
 
 def test_empty_prefix_refuses_rather_than_emit_an_unreadable_stamp() -> None:
     # With no base image to anchor coverage.is_stamped's empty-prefix fallback, a
     # base-less stamp under an empty prefix would carry only standard OCI keys —
-    # indistinguishable from an unstamped artifact. Refuse instead of fabricating
-    # a stamp that can never read back as covered.
-    with pytest.raises(PolicyValidationError):
+    # indistinguishable from an unstamped artifact. Refuse instead of fabricating a
+    # stamp that can never read back as covered. KNOCK_LABEL_PREFIX is environment
+    # configuration, not the operator's MirrorPolicy, so this is a ConfigError.
+    with pytest.raises(ConfigError):
         stamp(prefix="")
 
 
-def test_empty_prefix_error_exits_1_like_any_domain_error() -> None:
-    with pytest.raises(PolicyValidationError) as exc_info:
+def test_empty_prefix_error_exits_3_like_any_config_error() -> None:
+    with pytest.raises(ConfigError) as exc_info:
         stamp(prefix="")
-    assert exit_code_for(exc_info.value) == 1
+    assert exit_code_for(exc_info.value) == 3
+
+
+def test_empty_prefix_error_names_the_variable() -> None:
+    # An operator reading the error must be able to tell what to change.
+    with pytest.raises(ConfigError, match="KNOCK_LABEL_PREFIX"):
+        stamp(prefix="")
 
 
 def test_empty_revision_is_refused_as_fabrication_by_emptiness() -> None:
+    # Unlike the empty prefix above, this is a data fault (the resolved revision
+    # itself is wrong), not a config fault, so it stays a PolicyValidationError.
     with pytest.raises(PolicyValidationError):
         stamp(revision="")

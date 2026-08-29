@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from knock.errors import PolicyValidationError
+from knock.errors import ConfigError, PolicyValidationError
 
 
 def _oci_created_and_vendor(*, created: datetime, vendor: str | None) -> dict[str, str]:
@@ -73,19 +73,23 @@ def build_git_stamp_annotations(
     forbids fabricating it. `revision` is the upstream commit, which is precisely what
     the OCI key means: the SCM revision of the packaged software.
 
-    Requires a non-empty `prefix`: with no base image to anchor `is_stamped`'s
-    empty-prefix fallback heuristic (`coverage.py`), the OCI-standard keys alone
-    (title, source, revision, created) would be indistinguishable from an unstamped
-    artifact, so this refuses rather than silently emit a stamp that can never read
-    back as covered. Likewise refuses an empty `revision`: that would be
-    fabrication-by-emptiness, exactly what this function exists to avoid.
+    Requires a non-empty `prefix` (a `ConfigError`, like ADR 0041's `--require stamp`
+    precedent): with no base image to anchor `is_stamped`'s empty-prefix fallback
+    heuristic (`coverage.py`), the OCI-standard keys alone (title, source, revision,
+    created) would be indistinguishable from an unstamped artifact, so this refuses
+    rather than silently emit a stamp that can never read back as covered. This is
+    configuration, not a policy fault — `KNOCK_LABEL_PREFIX` is an environment
+    setting, the operator's `MirrorPolicy` is fine.
+
+    Also refuses an empty `revision` (a `PolicyValidationError`: a data fault, not a
+    config one) — that would be fabrication-by-emptiness, exactly what this function
+    exists to avoid.
     """
     if not prefix:
-        raise PolicyValidationError(
-            "cannot stamp a git-sourced artifact with an empty label prefix: there is "
-            "no base image to anchor the empty-prefix coverage heuristic, so the "
-            "resulting OCI-standard-only annotations would be indistinguishable from "
-            "an unstamped artifact"
+        raise ConfigError(
+            "stamping a git-sourced artifact requires a non-empty KNOCK_LABEL_PREFIX "
+            "(default `io.knock`); a git source has no base image to anchor the "
+            "empty-prefix coverage fallback"
         )
     if not revision:
         raise PolicyValidationError(

@@ -72,7 +72,9 @@ so any scanner reads them for free, and `io.knock.*` keys only for the novel fac
 artifact type, the three-level `policy` / `import` / `variant` identity, the `owners`
 (Backstage entity-refs), and the transform lineage. No location is ever stamped — the same
 digest can live in many registries. The prefix is configurable (`KNOCK_LABEL_PREFIX`); an empty
-prefix emits only the OCI-standard keys. The full contract is the
+prefix emits only the OCI-standard keys for an image-derived artifact — a source-derived
+artifact (e.g. a git-ingested skill) has no base image to anchor that fallback, so it requires
+a non-empty prefix and refuses to stamp under an empty one. The full contract is the
 [provenance-stamp reference](../reference/schemas/mirror-policy.md), and the rationale is in
 [transforms & signed attestations](attestations.md).
 
