@@ -99,7 +99,7 @@ def test_audit_limit_caps_scanned(monkeypatch: pytest.MonkeyPatch, fake_bin_path
     assert data["counts"]["scanned"] == 1
 
 
-def test_audit_of_a_path_prefixed_registry_logs_in_with_the_bare_host(
+def test_audit_of_a_path_prefixed_registry_uses_the_bare_host_and_walks_only_its_namespace(
     monkeypatch: pytest.MonkeyPatch, fake_bin_path: Path, tmp_path: Path
 ) -> None:
     log = tmp_path / "regctl.log"
@@ -120,4 +120,7 @@ def test_audit_of_a_path_prefixed_registry_logs_in_with_the_bare_host(
     assert "repo ls ghcr.io" in argv
     # the namespace filter is applied to the catalog, not to the catalog request
     assert any("ghcr.io/acme/redis" in line for line in argv)
-    assert not any("ghcr.io/other/redis" in line for line in argv)
+    # Matched on the bare `other/redis`, not on a composed ref: the pre-filter bug emitted
+    # the out-of-namespace repo as `ghcr.io/acme/other/redis`, so pinning the composed
+    # `ghcr.io/other/redis` would have stayed green against the very shape it guards.
+    assert not any("other/redis" in line for line in argv)
