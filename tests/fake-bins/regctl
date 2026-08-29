@@ -36,6 +36,7 @@ case "$cmd" in
     "repo ls")
         case "$scenario" in
             repos) printf 'lib/redis\nlib/nginx\n' ;;
+            ghcr-namespaced) printf 'acme/redis\nother/redis\n' ;;
             coverage-covered) printf 'lib/redis\n' ;;
             coverage-signed) printf 'lib/redis\n' ;;
             coverage-sbom) printf 'lib/redis\n' ;;
