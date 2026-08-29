@@ -37,7 +37,8 @@
       "enum": [
         "image",
         "helmChart",
-        "generic"
+        "generic",
+        "skill"
       ],
       "title": "ArtifactType",
       "type": "string"
@@ -192,6 +193,40 @@
       "title": "Destination",
       "type": "object"
     },
+    "GitSource": {
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "description": "Upstream git repository URL, e.g. `https://github.com/o/r.git`.",
+          "title": "Url",
+          "type": "string"
+        },
+        "ref": {
+          "default": "HEAD",
+          "description": "Branch, tag, or commit to ingest. Resolved to an immutable commit sha.",
+          "title": "Ref",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Sub-directory holding the artifact; the repository root when omitted.",
+          "title": "Path"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "GitSource",
+      "type": "object"
+    },
     "ImportProfile": {
       "additionalProperties": false,
       "properties": {
@@ -340,7 +375,7 @@
       "title": "Metadata",
       "type": "object"
     },
-    "Source": {
+    "RegistrySource": {
       "additionalProperties": false,
       "properties": {
         "registry": {
@@ -358,7 +393,7 @@
         "registry",
         "repository"
       ],
-      "title": "Source",
+      "title": "RegistrySource",
       "type": "object"
     },
     "Spec": {
@@ -366,11 +401,19 @@
       "properties": {
         "artifactType": {
           "$ref": "#/$defs/ArtifactType",
-          "description": "Artifact kind: `image` | `helmChart` | `generic`."
+          "description": "Artifact kind: `image` | `helmChart` | `generic` | `skill`."
         },
         "source": {
-          "$ref": "#/$defs/Source",
-          "description": "Upstream source registry + repository."
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RegistrySource"
+            },
+            {
+              "$ref": "#/$defs/GitSource"
+            }
+          ],
+          "description": "Upstream source: a registry, or a git repository.",
+          "title": "Source"
         },
         "deletionMode": {
           "anyOf": [

@@ -223,6 +223,58 @@ spec:
     assert fake.logins == [("ghcr.io", "u", True)]
 
 
+GIT_POLICY = parse_mirror_policy("""
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata: { name: example-skill }
+spec:
+  artifactType: skill
+  source: { url: "https://github.com/example/agent-skill.git", ref: v1.2.0 }
+  imports:
+    - name: release
+      tags: {}
+      destinations: [{ project: skills, repository: example-skill }]
+""")
+
+
+def test_git_sourced_policy_is_skipped_not_fatal() -> None:
+    # reconcile only knows how to mirror registry sources today; a git-sourced policy
+    # (skill is git-only) sitting in the same worklist must not blow up the whole run
+    # with an InternalError — the registry-sourced policy still reconciles normally,
+    # and the git one is reported as an explicit, non-zero-information skip rather
+    # than silently doing nothing.
+    fake = FakeRegistryPort(
+        tags={
+            "docker.io/library/redis": ["7.2.0"],
+            "harbor.corp/lib/redis": [],
+        },
+        infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
+    )
+    reporter = FakeReporter()
+    report = _run([POLICY, GIT_POLICY], registry=fake, reporter=reporter)
+
+    # The registry-sourced policy reconciled fully, unaffected by its git-sourced sibling.
+    assert ("docker.io/library/redis@sha256:a", "harbor.corp/lib/redis:7.2.0") in fake.copied
+    redis_report = next(p for p in report.policies if p.name == "redis")
+    assert redis_report.status == "ok"
+
+    # The git-sourced policy is reported, not silently absent — with an actionable
+    # reason, and NOT the "bug" exit code an uncaught InternalError would carry.
+    skill_report = next(p for p in report.policies if p.name == "example-skill")
+    assert skill_report.status == "failed"
+    assert skill_report.error is not None
+    assert "git" in skill_report.error.message
+    assert skill_report.error.type != "InternalError"
+
+    assert (
+        "example-skill",
+        "https://github.com/example/agent-skill.git",
+    ) in reporter.policies_started
+    failed_names = [name for name, _err in reporter.failures]
+    assert "example-skill" in failed_names
+    assert all(err.type != "InternalError" for _name, err in reporter.failures)
+
+
 def test_copy_path_pins_the_source_digest_it_stamps() -> None:
     # TOCTOU: copying by tag lets upstream retag between the plan and the apply, so knock
     # places bytes A while stamping base.digest = B — the stamp then describes a different

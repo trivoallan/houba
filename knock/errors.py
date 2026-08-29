@@ -7,6 +7,13 @@ from __future__ import annotations
 
 __all__ = [
     "AdapterError",
+    "ArchiveDestinationWriteError",
+    "ArchiveError",
+    "ArchiveLayoutError",
+    "ArchiveSizeMismatchError",
+    "ArchiveSourceReadError",
+    "ArtifactAnnotationError",
+    "ArtifactBlobPathError",
     "BuildkitError",
     "ConfigError",
     "CosignError",
@@ -18,8 +25,11 @@ __all__ = [
     "QueueUnavailableError",
     "RegctlError",
     "ScanReportError",
+    "SourceError",
+    "SourcePathError",
     "SyftError",
     "UnknownFormatError",
+    "UnsupportedSourceError",
     "UsageOracleError",
     "exit_code_for",
 ]
@@ -31,6 +41,33 @@ class KnockError(Exception):
 
 class DomainError(KnockError):
     """Business logic or validation error (exit 1)."""
+
+
+class ArchiveError(DomainError):
+    """A source tree, or a planned entry list, cannot be packaged safely: a symlink, a
+    path that escapes the root, a non-canonical or duplicate archive path, an
+    oversized tree, or a tree with no plugin marker. Raised both while planning
+    (`knock.domain.packaging.plan_archive`) and while writing
+    (`knock.adapters.zip_writer.write_archive`), since the writer re-checks what it
+    can independently verify from the filesystem rather than trusting the plan."""
+
+
+class ArchiveLayoutError(ArchiveError):
+    """A tree passed every safety check but carries no recognised plugin marker at its
+    root. Layout, not safety — kept as its own subclass (still exit 1 via DomainError in
+    its MRO) so that a future policy escape hatch for the layout check could never also
+    let a symlink, traversal, collision, or size refusal be bypassed."""
+
+
+class ArtifactAnnotationError(DomainError):
+    """A `put_artifact` annotation key is empty or contains '=' — regctl splits each
+    --annotation token on the first '=', so either would silently mangle the pushed
+    annotation (RC 0) rather than fail loudly."""
+
+
+class ArtifactBlobPathError(DomainError):
+    """A `put_artifact` blob_path does not exist or is not a regular file (e.g. a
+    directory, which regctl otherwise pushes as a bogus layer at RC 0)."""
 
 
 class PolicyValidationError(DomainError):
@@ -45,8 +82,44 @@ class UnknownFormatError(DomainError):
     """The scan report format could not be detected and no valid --format was supplied."""
 
 
+class UnsupportedSourceError(DomainError):
+    """A policy's source is a valid MirrorPolicy shape, but this use case does not
+    handle that source kind yet (e.g. a git source reaching a registry-only reconcile
+    run)."""
+
+
+class SourcePathError(DomainError):
+    """A policy names a subdirectory that does not exist in the fetched tree.
+
+    Exit 1: the operator's input is wrong, and unlike SourceError this is unambiguous —
+    we resolve it ourselves with `is_dir()`, with no subprocess in the way to confuse a
+    bad path with a failed transport.
+    """
+
+
 class AdapterError(KnockError):
     """Infrastructure / external-dependency error (exit 2)."""
+
+
+class ArchiveSourceReadError(AdapterError):
+    """The source tree could not be read — while it was walked into a plan, or while a
+    planned archive was written from it (a directory that cannot be listed, a file that is
+    missing, unreadable, or a broken symlink). A filesystem fault, not an invalid plan."""
+
+
+class ArchiveSizeMismatchError(AdapterError):
+    """A source file's byte count no longer matches the size `plan_archive` recorded
+    for it when the archive is written — a concurrent-modification race caught at the
+    write boundary (the tree changed underneath the packaging step), not a bug and not
+    an invalid plan. Exit 2 is chosen because the remedy is environmental — re-run
+    against a quiescent tree — not because the adapter itself misbehaved."""
+
+
+class ArchiveDestinationWriteError(AdapterError):
+    """The archive's destination could not be created, written to, or finalised
+    (unwritable directory, destination is itself a directory, disk full at flush) — a
+    filesystem fault on the output side, mirroring `ArchiveSourceReadError` on the
+    input side."""
 
 
 class RegctlError(AdapterError):
@@ -67,6 +140,16 @@ class SyftError(AdapterError):
 
 class UsageOracleError(AdapterError):
     """Usage-oracle invocation error (external command unreachable or invalid output)."""
+
+
+class SourceError(AdapterError):
+    """An upstream source could not be fetched (git failed, or the binary is missing).
+
+    Exit 2: infrastructure. The operator's policy may be perfectly valid and the fetch
+    still fail — network, credentials, a server that refuses the request. An unknown ref
+    and a dead network both surface as a non-zero git exit; telling them apart would mean
+    parsing git's stderr, so both deliberately stay SourceError.
+    """
 
 
 class QueueError(AdapterError):
