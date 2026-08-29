@@ -17,7 +17,7 @@ COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildctl /usr/bin/buildctl
 COPY --from=regclient/regctl:v0.11.5 /regctl /usr/bin/regctl
 
 # cosign signs the in-toto attestations on the rebuild path (KNOCK_ATTEST_*).
-COPY --from=ghcr.io/sigstore/cosign/cosign:v3.1.2 /ko-app/cosign /usr/bin/cosign
+COPY --from=ghcr.io/sigstore/cosign/cosign:v3.1.3 /ko-app/cosign /usr/bin/cosign
 
 # syft generates the package-level SBOM on both paths (KNOCK_SBOM_FORMATS).
 COPY --from=anchore/syft:v1.51.1 /syft /usr/bin/syft
