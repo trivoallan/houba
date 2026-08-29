@@ -4,11 +4,30 @@ OCI-standard annotations carry the immutable build facts every scanner reads for
 free; `{prefix}.*` carries knock facts (owners key, artifact type, three-level
 policy.import.variant identity). No location fact is stamped — the same digest can
 live in many registries.
+
+Two shapes: `build_stamp_annotations` stamps an artifact mirrored/derived from an
+upstream *image* and writes `base.name`/`base.digest`. `build_git_stamp_annotations`
+stamps an artifact ingested from a *git* repository, which has no base image — ADR
+0020 forbids fabricating one, so those keys are omitted and the upstream commit is
+carried as `revision` instead.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+
+from knock.errors import PolicyValidationError
+
+
+def _oci_created_and_vendor(*, created: datetime, vendor: str | None) -> dict[str, str]:
+    """The `image.created` (+ optional `image.vendor`) block, shared by every stamped artifact.
+
+    vendor = the rebuilding org; org-specific so it is configuration, never hardcoded.
+    """
+    annotations: dict[str, str] = {"org.opencontainers.image.created": created.isoformat()}
+    if vendor:
+        annotations["org.opencontainers.image.vendor"] = vendor
+    return annotations
 
 
 def _lineage_annotations(
@@ -34,10 +53,10 @@ def _lineage_annotations(
     return annotations
 
 
-def build_source_stamp_annotations(
+def build_git_stamp_annotations(
     *,
     prefix: str,
-    origin: str,
+    url: str,
     revision: str,
     title: str,
     created: datetime,
@@ -48,20 +67,37 @@ def build_source_stamp_annotations(
     import_name: str,
     variant: str,
 ) -> dict[str, str]:
-    """Stamp an artifact built from a source tree rather than an upstream image.
+    """Stamp an artifact built from a git source rather than an upstream image.
 
     There is no base image, so `org.opencontainers.image.base.*` is omitted — ADR 0020
-    forbids fabricating it. `revision` is the upstream commit, which is precisely what the
-    OCI key means: the SCM revision of the packaged software.
+    forbids fabricating it. `revision` is the upstream commit, which is precisely what
+    the OCI key means: the SCM revision of the packaged software.
+
+    Requires a non-empty `prefix`: with no base image to anchor `is_stamped`'s
+    empty-prefix fallback heuristic (`coverage.py`), the OCI-standard keys alone
+    (title, source, revision, created) would be indistinguishable from an unstamped
+    artifact, so this refuses rather than silently emit a stamp that can never read
+    back as covered. Likewise refuses an empty `revision`: that would be
+    fabrication-by-emptiness, exactly what this function exists to avoid.
     """
+    if not prefix:
+        raise PolicyValidationError(
+            "cannot stamp a git-sourced artifact with an empty label prefix: there is "
+            "no base image to anchor the empty-prefix coverage heuristic, so the "
+            "resulting OCI-standard-only annotations would be indistinguishable from "
+            "an unstamped artifact"
+        )
+    if not revision:
+        raise PolicyValidationError(
+            "cannot stamp a git-sourced artifact with an empty revision: an empty "
+            "org.opencontainers.image.revision is fabrication-by-emptiness"
+        )
     annotations: dict[str, str] = {
         "org.opencontainers.image.title": title,
-        "org.opencontainers.image.source": origin,
+        "org.opencontainers.image.source": url,
         "org.opencontainers.image.revision": revision,
-        "org.opencontainers.image.created": created.isoformat(),
     }
-    if vendor:
-        annotations["org.opencontainers.image.vendor"] = vendor
+    annotations.update(_oci_created_and_vendor(created=created, vendor=vendor))
     annotations.update(
         _lineage_annotations(
             prefix=prefix,
@@ -100,11 +136,8 @@ def build_stamp_annotations(
         "org.opencontainers.image.source": source,
         "org.opencontainers.image.base.name": f"{source}:{source_tag}",
         "org.opencontainers.image.base.digest": source_digest,
-        "org.opencontainers.image.created": created.isoformat(),
     }
-    # vendor = the rebuilding org; org-specific so it is configuration, never hardcoded.
-    if vendor:
-        annotations["org.opencontainers.image.vendor"] = vendor
+    annotations.update(_oci_created_and_vendor(created=created, vendor=vendor))
     # revision = the SCM revision of the *packaged software*, as the SOURCE image declares it
     # (OCI semantics). knock does not know the upstream commit, so it propagates the source's
     # own .revision when present and omits the key otherwise — never a fabricated digest/tag.
