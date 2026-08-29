@@ -162,9 +162,19 @@ class AttestSettings(BaseModel):
     key_ref: str = Field(
         default="", description="KMS URI (`kms`) or key path (`key`); required for those signers."
     )
-    fulcio_url: str = Field(default="", description="Keyless CA URL; blank ⇒ public Fulcio.")
+    fulcio_url: str = Field(
+        default="",
+        description=(
+            "Keyless CA URL; blank ⇒ public Fulcio for `keyless`, "
+            "no CA at all for `kms`/`key` (the air-gapped path)."
+        ),
+    )
     rekor_url: str = Field(
-        default="", description="Transparency-log URL; blank ⇒ no log entry (the air-gapped path)."
+        default="",
+        description=(
+            "Transparency-log URL; blank ⇒ public Rekor for `keyless`, "
+            "no log entry for `kms`/`key` (the air-gapped path)."
+        ),
     )
     builder_id: str = Field(
         default="", description="URI identifying this knock builder (feeds both predicates)."
@@ -251,9 +261,15 @@ class Settings(BaseSettings):
         description="Signing mode for SLSA attestations on the rebuild path; empty ⇒ off.",
     )
     attest_key_ref: str = Field(default="", description="KMS URI (`kms`) or key path (`key`).")
-    attest_fulcio_url: str = Field(default="", description="Keyless CA URL; blank ⇒ public Fulcio.")
+    attest_fulcio_url: str = Field(
+        default="",
+        description=("Keyless CA URL; blank ⇒ public Fulcio for `keyless`, no CA for `kms`/`key`."),
+    )
     attest_rekor_url: str = Field(
-        default="", description="Transparency-log URL; blank ⇒ no log entry."
+        default="",
+        description=(
+            "Transparency-log URL; blank ⇒ public Rekor for `keyless`, no log for `kms`/`key`."
+        ),
     )
     attest_builder_id: str = Field(default="", description="URI identifying this knock builder.")
     attest_verify_identity: str = Field(

@@ -4,6 +4,8 @@ import json
 
 from knock.domain.attestation import (
     PREDICATE_TYPE,
+    PUBLIC_FULCIO_URL,
+    PUBLIC_REKOR_URL,
     SIGNING_CONFIG_MEDIA_TYPE,
     STATEMENT_TYPE,
     build_signing_config,
@@ -178,3 +180,69 @@ def test_signing_config_both_services_present() -> None:
     assert "caUrls" in cfg
     assert "rekorTlogUrls" in cfg
     assert cfg["rekorTlogConfig"] == {"selector": "ANY"}
+
+
+def test_keyless_signing_config_blank_urls_default_to_public_sigstore() -> None:
+    """keyless has no key to fall back on: a CA-less config cannot sign at all."""
+    cfg = build_signing_config(fulcio_url="", rekor_url="", operator="knock", keyless=True)
+    assert PUBLIC_FULCIO_URL == "https://fulcio.sigstore.dev"
+    assert PUBLIC_REKOR_URL == "https://rekor.sigstore.dev"
+    assert cfg["caUrls"] == [
+        {
+            "url": PUBLIC_FULCIO_URL,
+            "majorApiVersion": 1,
+            "validFor": {"start": "1970-01-01T00:00:00Z"},
+            "operator": "knock",
+        }
+    ]
+    assert cfg["rekorTlogUrls"] == [
+        {
+            "url": PUBLIC_REKOR_URL,
+            "majorApiVersion": 1,
+            "validFor": {"start": "1970-01-01T00:00:00Z"},
+            "operator": "knock",
+        }
+    ]
+    assert cfg["rekorTlogConfig"] == {"selector": "ANY"}
+
+
+def test_keyless_signing_config_explicit_urls_win_over_public_defaults() -> None:
+    cfg = build_signing_config(
+        fulcio_url="https://fulcio.corp",
+        rekor_url="https://rekor.corp",
+        operator="knock",
+        keyless=True,
+    )
+    assert [s["url"] for s in cfg["caUrls"]] == ["https://fulcio.corp"]
+    assert [s["url"] for s in cfg["rekorTlogUrls"]] == ["https://rekor.corp"]
+
+
+def test_keyless_signing_config_defaults_only_the_blank_url() -> None:
+    ca_only = build_signing_config(
+        fulcio_url="https://fulcio.corp", rekor_url="", operator="knock", keyless=True
+    )
+    assert [s["url"] for s in ca_only["caUrls"]] == ["https://fulcio.corp"]
+    assert [s["url"] for s in ca_only["rekorTlogUrls"]] == [PUBLIC_REKOR_URL]
+
+    tlog_only = build_signing_config(
+        fulcio_url="", rekor_url="https://rekor.corp", operator="knock", keyless=True
+    )
+    assert [s["url"] for s in tlog_only["caUrls"]] == [PUBLIC_FULCIO_URL]
+    assert [s["url"] for s in tlog_only["rekorTlogUrls"]] == ["https://rekor.corp"]
+
+
+def test_keyed_signers_keep_the_air_gapped_empty_config_and_contact_nothing() -> None:
+    """Regression guard: the public-Sigstore default must NOT leak into kms/key.
+
+    Those signers already hold a key and need no CA; an air-gapped deployment
+    depends on knock reaching out to nothing. Delete the ``keyless`` condition in
+    ``build_signing_config`` and this test fails — that is exactly its job.
+    """
+    cfg = build_signing_config(fulcio_url="", rekor_url="", operator="knock", keyless=False)
+    assert "caUrls" not in cfg
+    assert "rekorTlogUrls" not in cfg
+    assert cfg == {
+        "mediaType": SIGNING_CONFIG_MEDIA_TYPE,
+        "rekorTlogConfig": {},
+        "tsaConfig": {},
+    }

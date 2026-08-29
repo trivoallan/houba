@@ -63,6 +63,7 @@ class CosignAdapter:
             fulcio_url=cfg.fulcio_url,
             rekor_url=cfg.rekor_url,
             operator=cfg.builder_id or "knock",
+            keyless=cfg.signer == "keyless",
         )
         with tempfile.TemporaryDirectory(prefix="knock-attest-") as tmp:
             pred_path = Path(tmp) / "predicate.json"
