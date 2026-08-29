@@ -8,6 +8,8 @@ from __future__ import annotations
 __all__ = [
     "AdapterError",
     "ArchiveError",
+    "ArchiveSizeMismatchError",
+    "ArchiveSourceReadError",
     "BuildkitError",
     "ConfigError",
     "CosignError",
@@ -60,6 +62,17 @@ class UnsupportedSourceError(DomainError):
 
 class AdapterError(KnockError):
     """Infrastructure / external-dependency error (exit 2)."""
+
+
+class ArchiveSourceReadError(AdapterError):
+    """A source file could not be read while writing a planned archive (missing,
+    unreadable, or a broken symlink) — a filesystem fault, not an invalid plan."""
+
+
+class ArchiveSizeMismatchError(AdapterError):
+    """A source file's actual byte count did not match the size `plan_archive`
+    recorded for it — the tree changed underneath the packaging step between
+    planning and writing, so the digest would silently cover a partial file."""
 
 
 class RegctlError(AdapterError):

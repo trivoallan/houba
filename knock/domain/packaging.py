@@ -24,6 +24,7 @@ __all__ = [
     "PLUGIN_MARKERS",
     "ArchiveEntry",
     "SourceFile",
+    "path_escapes_root",
     "plan_archive",
 ]
 
@@ -61,13 +62,16 @@ class SourceFile:
 
 @dataclass(frozen=True)
 class ArchiveEntry:
-    """One planned archive member: where it goes and the mode it is stored with."""
+    """One planned archive member: where it goes, the mode it is stored with, and the
+    size it was measured at during planning (so a writer can catch the tree changing
+    underneath it between planning and writing)."""
 
     path: str
     mode: int
+    size: int
 
 
-def _escapes(path: str) -> bool:
+def path_escapes_root(path: str) -> bool:
     """True if `path` is unsafe to extract underneath the tree root.
 
     Rejects absolute paths, parent-directory traversal (checked after normalisation, so
@@ -81,6 +85,12 @@ def _escapes(path: str) -> bool:
     Windows treats `\\` as a path separator, so that "filename" is `..` followed by
     `evil` and walks out of the root there. Refusing any backslash here closes that gap
     without needing to know what will extract the archive.
+
+    Public (not `_`-prefixed) because `plan_archive` is not the only place this must be
+    enforced: `knock.adapters.zip_writer.write_archive` calls it too, on every entry it
+    is asked to write, so that a caller which builds `ArchiveEntry` values without going
+    through `plan_archive` cannot smuggle a root-escaping arcname into the zip. One
+    predicate, enforced at both the planning boundary and the write boundary.
     """
     if not path or "\\" in path:
         return True
@@ -109,7 +119,7 @@ def plan_archive(
     for file in files:
         if file.is_symlink:
             raise ArchiveError(f"refusing to package a symlink: {file.path}")
-        if _escapes(file.path):
+        if path_escapes_root(file.path):
             raise ArchiveError(f"refusing to package a path that escapes the root: {file.path}")
         total += file.size
     if total > max_bytes:
@@ -120,6 +130,10 @@ def plan_archive(
             "no plugin content at the root (expected one of: " + ", ".join(PLUGIN_MARKERS) + ")"
         )
     return [
-        ArchiveEntry(path=file.path, mode=0o755 if file.is_executable else 0o644)
+        ArchiveEntry(
+            path=file.path,
+            mode=0o755 if file.is_executable else 0o644,
+            size=file.size,
+        )
         for file in sorted(files, key=lambda f: f.path)
     ]

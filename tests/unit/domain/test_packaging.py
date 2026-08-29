@@ -8,6 +8,7 @@ from knock.domain.packaging import (
     MAX_ARCHIVE_BYTES,
     ArchiveError,
     SourceFile,
+    path_escapes_root,
     plan_archive,
 )
 
@@ -30,6 +31,15 @@ def test_preserves_the_executable_bit() -> None:
     modes = {e.path: e.mode for e in planned}
     assert modes["scripts/run.sh"] == 0o755
     assert modes[".claude-plugin/plugin.json"] == 0o644
+
+
+def test_preserves_the_planned_size() -> None:
+    """`ArchiveEntry.size` is what a writer compares its actual byte count against to
+    catch the source tree changing between planning and writing — it must be the size
+    recorded here, not re-derived later from the filesystem."""
+    planned = plan_archive([f(".claude-plugin/plugin.json", size=16), f("scripts/run.sh", size=18)])
+    sizes = {e.path: e.size for e in planned}
+    assert sizes == {".claude-plugin/plugin.json": 16, "scripts/run.sh": 18}
 
 
 def test_refuses_a_symlink() -> None:
@@ -88,3 +98,18 @@ def test_accepts_a_bare_skill_md() -> None:
 def test_refuses_an_empty_tree() -> None:
     with pytest.raises(ArchiveError, match="no plugin content"):
         plan_archive([])
+
+
+def test_path_escapes_root_is_the_public_predicate_plan_archive_enforces() -> None:
+    """`path_escapes_root` is exported (not `_`-prefixed) specifically so
+    `knock.adapters.zip_writer.write_archive` can enforce the same rule at the write
+    boundary, without duplicating this logic. A direct test here pins its own contract
+    independent of `plan_archive`'s wrapping error message."""
+    assert path_escapes_root("../evil") is True
+    assert path_escapes_root("/etc/passwd") is True
+    assert path_escapes_root("a/../../b") is True
+    assert path_escapes_root("..\\evil") is True
+    assert path_escapes_root("") is True
+    assert path_escapes_root(".") is True
+    assert path_escapes_root("skills/a.md") is False
+    assert path_escapes_root(".claude-plugin/plugin.json") is False

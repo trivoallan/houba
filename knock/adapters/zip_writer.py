@@ -23,10 +23,16 @@ Two things this module cannot guarantee on its own:
   `knock.domain.packaging.plan_archive` already rejected any tree over
   `MAX_ARCHIVE_BYTES` before this function ever sees the entry list.
 
-`entries` must already be the trusted output of `plan_archive` (or equivalent
-validation) — this function does not re-check for symlinks, path traversal, or size. It
-reads `root / entry.path` and writes it under `entry.path` verbatim; feeding it an
-unvalidated list reintroduces the zip-slip the planner exists to prevent.
+`entries` is expected to be the trusted output of `plan_archive` (or equivalent
+validation), but the adapter does not simply trust that on faith: every `entry.path` is
+re-checked with `path_escapes_root` before it is written, so a caller that builds
+`ArchiveEntry` values by hand cannot smuggle a root-escaping arcname past this boundary
+just because it skipped the planner. What the adapter cannot re-derive from `entries`
+alone — a symlink, or content that changed after `plan_archive` measured it — is instead
+caught as it happens: a source file that has vanished or become unreadable since
+planning raises `ArchiveSourceReadError`, and one whose byte count no longer matches the
+size `plan_archive` recorded raises `ArchiveSizeMismatchError`, rather than silently
+shipping a partial file under a clean, stable digest.
 """
 
 from __future__ import annotations
@@ -34,22 +40,46 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
-from knock.domain.packaging import ArchiveEntry
+from knock.domain.packaging import ArchiveEntry, path_escapes_root
+from knock.errors import ArchiveError, ArchiveSizeMismatchError, ArchiveSourceReadError
 
-# The zip epoch. Any constant works; this one is the format's own minimum.
-FIXED_DATE_TIME = (1980, 1, 1, 0, 0, 0)
+# The zip epoch is (1980, 1, 1); sitting a couple of days above that floor gives any
+# future arithmetic on this constant (e.g. "one day earlier") headroom before it
+# underflows a format that cannot represent an earlier date at all.
+FIXED_DATE_TIME = (1980, 1, 3, 0, 0, 0)
 
 
 def write_archive(root: Path, entries: list[ArchiveEntry], destination: Path) -> None:
     """Write `entries` (already ordered and validated) from `root` into `destination`.
 
-    Trust boundary: `entries` is assumed to be the trusted output of a planner such as
-    `plan_archive` — every path is already relative, root-confined, and not a symlink.
+    Trust boundary: `entries` is expected to be the output of a planner such as
+    `plan_archive` — every path already relative, root-confined, and not a symlink.
+    Each `entry.path` is still re-checked here with `path_escapes_root` (raising
+    `ArchiveError` on a hit), so the adapter stays safe even if a caller bypasses the
+    planner; what it cannot independently verify — that the source file still exists,
+    is readable, and still matches the size recorded at planning time — is checked
+    against the filesystem as each entry is written, raising `ArchiveSourceReadError` or
+    `ArchiveSizeMismatchError` respectively rather than writing a silently partial file.
     """
     with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for entry in entries:
+            if path_escapes_root(entry.path):
+                raise ArchiveError(f"refusing to write a path that escapes the root: {entry.path}")
+            source = root / entry.path
+            try:
+                data = source.read_bytes()
+            except OSError as exc:
+                raise ArchiveSourceReadError(
+                    f"could not read source file for archive entry {entry.path!r}: {source}"
+                ) from exc
+            if len(data) != entry.size:
+                raise ArchiveSizeMismatchError(
+                    f"archive entry {entry.path!r} was planned at {entry.size} bytes "
+                    f"but read back as {len(data)} bytes: {source}"
+                )
+
             info = zipfile.ZipInfo(filename=entry.path, date_time=FIXED_DATE_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = 3  # Unix, so external_attr below is read as a POSIX mode
             info.external_attr = (0o100000 | entry.mode) << 16
-            zf.writestr(info, (root / entry.path).read_bytes())
+            zf.writestr(info, data)
