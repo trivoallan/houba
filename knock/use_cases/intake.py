@@ -28,18 +28,12 @@ behind there would break the next fetch into a reused path.
 empty `KNOCK_LABEL_PREFIX` (a `ConfigError`, exit 3), and there is no reason to make an
 operator pay for packaging an artifact that was never going to be pushed.
 
-**`walk_tree` and `write_archive` are imported from `adapters/` rather than injected as
-ports**, which is the one place this module departs from README's "use_cases/ receive ports
-by injection; they never import adapters". Called out rather than quietly done: every other
-adapter behind that rule wraps an *external system* (a registry, a builder, a signer, a
-queue) whose absence or misbehaviour a fake has to stand in for, while these two are
-stateless functions over the local filesystem — the same thing `loader.py` does inline with
-`rglob`/`read_text`, and `reconcile.py` with `tempfile` and `write_text`, both without a
-port. The rule's stated purpose is being able to test a use case with in-memory fakes, and
-here that is exactly the wrong thing to want: a faked filesystem is what let both defects
-above sit unnoticed in a plan that had tests. If a reviewer prefers the rule read literally,
-an `ArchiverPort` over these two functions is a mechanical change — but it should come with
-an eye on which tests then stop touching a real tree.
+**The archiver is injected, not imported.** `walk` and `write_archive` arrive through
+`ArchiverPort` like `source` and `registry` do, so every dependency of this function is
+visible in its signature rather than half of them being reached for directly. The port's
+docstring carries the other half of that decision: its implementations are exercised for
+real in tests, never faked, because both defects above are properties of a real filesystem
+and neither is reachable through an in-memory tree.
 """
 
 from __future__ import annotations
@@ -50,10 +44,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from knock.adapters.tree_walker import walk_tree
-from knock.adapters.zip_writer import write_archive
 from knock.domain.packaging import plan_archive
 from knock.domain.stamp import build_git_stamp_annotations
+from knock.ports.archiver import ArchiverPort
 from knock.ports.registry import RegistryPort
 from knock.ports.source import SourcePort
 
@@ -96,6 +89,7 @@ def intake_skill(
     *,
     source: SourcePort,
     registry: RegistryPort,
+    archiver: ArchiverPort,
     prefix: str,
     now: datetime,
 ) -> IntakeResult:
@@ -114,10 +108,10 @@ def intake_skill(
         import_name=request.import_name,
         variant=_IMPLICIT_VARIANT,
     )
-    entries = plan_archive(walk_tree(fetched.root))
+    entries = plan_archive(archiver.walk(fetched.root))
     with tempfile.TemporaryDirectory(prefix="knock-intake-") as staging:
         archive = Path(staging) / _ARCHIVE_NAME
-        write_archive(fetched.root, entries, archive)
+        archiver.write_archive(fetched.root, entries, archive)
         # Streamed, not `read_bytes()`: `put_artifact` takes a path precisely so a bundle
         # up to `MAX_ARCHIVE_BYTES` (100 MiB) is never materialised in this process, and
         # hashing it into memory here would give that back for nothing.

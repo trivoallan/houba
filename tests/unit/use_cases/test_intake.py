@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from knock.adapters.local_archiver import LocalArchiver
 from knock.errors import ArchiveError, ConfigError, exit_code_for
 from knock.ports.source import FetchedSource
 from knock.use_cases.intake import IntakeRequest, intake_skill
@@ -121,6 +122,7 @@ def test_pushes_a_stamped_artifact(tmp_path: Path) -> None:
         request_for(tmp_path / "work"),
         source=FakeGitSource(_skill_files()),
         registry=registry,
+        archiver=LocalArchiver(),
         prefix="io.knock",
         now=CREATED,
     )
@@ -159,6 +161,7 @@ def test_the_blob_digest_is_stable_across_runs(tmp_path: Path) -> None:
         request_for(tmp_path / "a"),
         source=FakeGitSource(_skill_files()),
         registry=RecordingRegistry(),
+        archiver=LocalArchiver(),
         prefix="io.knock",
         now=CREATED,
     )
@@ -166,6 +169,7 @@ def test_the_blob_digest_is_stable_across_runs(tmp_path: Path) -> None:
         request_for(tmp_path / "b"),
         source=FakeGitSource(_skill_files()),
         registry=RecordingRegistry(),
+        archiver=LocalArchiver(),
         prefix="io.knock",
         now=CREATED,
     )
@@ -182,6 +186,7 @@ def test_git_metadata_is_never_published(tmp_path: Path) -> None:
         request_for(tmp_path / "work"),
         source=FakeGitSource(_skill_files()),
         registry=registry,
+        archiver=LocalArchiver(),
         prefix="io.knock",
         now=CREATED,
     )
@@ -197,6 +202,7 @@ def test_the_archive_is_never_staged_inside_the_fetched_tree(tmp_path: Path) -> 
         request_for(workdir),
         source=FakeGitSource(_skill_files()),
         registry=RecordingRegistry(),
+        archiver=LocalArchiver(),
         prefix="io.knock",
         now=CREATED,
     )
@@ -214,6 +220,7 @@ def test_a_subdirectory_source_is_packaged_from_that_subdirectory(tmp_path: Path
         request_for(tmp_path / "work", path="packages/probe"),
         source=FakeGitSource(_skill_files("packages/probe/")),
         registry=registry,
+        archiver=LocalArchiver(),
         prefix="io.knock",
         now=CREATED,
     )
@@ -238,6 +245,7 @@ def test_an_unsafe_tree_is_never_pushed(tmp_path: Path) -> None:
             request_for(workdir),
             source=WithSymlink({}),
             registry=registry,
+            archiver=LocalArchiver(),
             prefix="io.knock",
             now=CREATED,
         )
@@ -255,6 +263,7 @@ def test_an_empty_prefix_refuses_before_anything_is_pushed(tmp_path: Path) -> No
             request_for(tmp_path / "work"),
             source=FakeGitSource(_skill_files()),
             registry=registry,
+            archiver=LocalArchiver(),
             prefix="",
             now=CREATED,
         )
