@@ -1,10 +1,11 @@
+import os
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 from knock.adapters.regctl_cli import RegctlAdapter
-from knock.errors import DomainError, RegctlError
+from knock.errors import ArtifactAnnotationError, ArtifactBlobPathError, RegctlError
 
 
 def test_list_tags(fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -434,9 +435,14 @@ def test_put_artifact_invokes_artifact_put_without_subject(
         media_type="application/zip",
         annotations={"org.opencontainers.image.revision": "deadbeef"},
     )
-    # Full-line equality: the honest encoding of "byte-stable invocation" — strictly
-    # stronger than a handful of substring/offset checks, and it catches --subject
-    # sneaking in, which is the entire distinction from put_referrer.
+    # Full-line equality against the fake's logged invocation, pinning every flag, its
+    # order, and its value as far as this harness can observe them: the fake's
+    # `echo "$@"` collapses argv onto one space-joined line, so it can't distinguish an
+    # argument containing internal whitespace from an argv boundary — a limitation of
+    # this shell double, not of the real adapter, which passes a proper argv list to
+    # subprocess with no shell involved. Still strictly stronger than the offset-based
+    # checks it replaces, and it catches --subject sneaking in, which is the entire
+    # distinction from put_referrer.
     expected = (
         "artifact put --artifact-type application/vnd.knock.skill.v1 "
         f"--file-media-type application/zip --file {blob} "
@@ -522,6 +528,25 @@ def test_put_artifact_raises_when_regctl_prints_no_digest(
         )
 
 
+def test_put_artifact_raises_when_regctl_prints_a_non_digest(
+    fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A non-empty but non-digest RC-0 output — e.g. a wrong --format template, or the
+    # ref put_referrer's branch of this same fake prints. Proves the shape check rejects
+    # more than just emptiness: replacing the digest regex with `.+` must make this fail.
+    monkeypatch.setenv("FAKE_REGCTL_SCENARIO", "artifact-put-nondigest")
+    blob = tmp_path / "skill.zip"
+    blob.write_bytes(b"PK\x03\x04")
+    with pytest.raises(RegctlError, match="digest"):
+        RegctlAdapter().put_artifact(
+            "r:1",
+            artifact_type="application/vnd.knock.skill.v1",
+            blob_path=blob,
+            media_type="application/zip",
+            annotations={},
+        )
+
+
 def test_put_artifact_rejects_annotation_key_containing_equals(
     fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -531,7 +556,7 @@ def test_put_artifact_rejects_annotation_key_containing_equals(
     log = _log(tmp_path, monkeypatch)
     blob = tmp_path / "skill.zip"
     blob.write_bytes(b"PK\x03\x04")
-    with pytest.raises(DomainError):
+    with pytest.raises(ArtifactAnnotationError):
         RegctlAdapter().put_artifact(
             "r:1",
             artifact_type="application/vnd.knock.skill.v1",
@@ -550,7 +575,7 @@ def test_put_artifact_rejects_empty_annotation_key(
     log = _log(tmp_path, monkeypatch)
     blob = tmp_path / "skill.zip"
     blob.write_bytes(b"PK\x03\x04")
-    with pytest.raises(DomainError):
+    with pytest.raises(ArtifactAnnotationError):
         RegctlAdapter().put_artifact(
             "r:1",
             artifact_type="application/vnd.knock.skill.v1",
@@ -569,7 +594,7 @@ def test_put_artifact_rejects_a_directory_as_blob_path(
     log = _log(tmp_path, monkeypatch)
     a_dir = tmp_path / "unpacked-skill"
     a_dir.mkdir()
-    with pytest.raises(DomainError):
+    with pytest.raises(ArtifactBlobPathError):
         RegctlAdapter().put_artifact(
             "r:1",
             artifact_type="application/vnd.knock.skill.v1",
@@ -577,4 +602,55 @@ def test_put_artifact_rejects_a_directory_as_blob_path(
             media_type="application/zip",
             annotations={},
         )
+    assert not log.exists()  # never spawned regctl
+
+
+def test_put_artifact_rejects_a_missing_blob_path(
+    fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A genuinely missing path already fails inside regctl itself (verified against
+    # v0.11.5: exits non-zero with "no such file or directory") — unlike the directory
+    # case above, it was never a "silently wrong push" bug. This precondition only
+    # reclassifies that failure from an AdapterError (exit 2) to a DomainError (exit 1),
+    # since it's the same caller-mistake shape, and it does so before ever spawning
+    # regctl.
+    log = _log(tmp_path, monkeypatch)
+    missing = tmp_path / "does-not-exist.zip"
+    with pytest.raises(ArtifactBlobPathError):
+        RegctlAdapter().put_artifact(
+            "r:1",
+            artifact_type="application/vnd.knock.skill.v1",
+            blob_path=missing,
+            media_type="application/zip",
+            annotations={},
+        )
+    assert not log.exists()  # never spawned regctl
+
+
+def test_put_artifact_blob_path_permission_error_is_adapter_error(
+    fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Path.is_file() swallows a permission-denied OSError and returns False, which
+    # would otherwise misreport an infrastructure problem (can't traverse the parent
+    # directory) as a caller mistake (blob_path doesn't exist). That must stay a
+    # RegctlError (AdapterError, exit 2), not an ArtifactBlobPathError (exit 1).
+    if os.getuid() == 0:
+        pytest.skip("root bypasses directory permission checks")
+    log = _log(tmp_path, monkeypatch)
+    locked_dir = tmp_path / "locked"
+    locked_dir.mkdir()
+    blob = locked_dir / "skill.zip"
+    blob.write_bytes(b"PK\x03\x04")
+    os.chmod(locked_dir, 0o000)
+    try:
+        with pytest.raises(RegctlError):
+            RegctlAdapter().put_artifact(
+                "r:1",
+                artifact_type="application/vnd.knock.skill.v1",
+                blob_path=blob,
+                media_type="application/zip",
+                annotations={},
+            )
+    finally:
+        os.chmod(locked_dir, 0o755)
     assert not log.exists()  # never spawned regctl

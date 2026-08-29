@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from knock.errors import RegctlError
+from knock.errors import ArtifactAnnotationError, ArtifactBlobPathError, RegctlError
 from knock.ports.registry import ImageInfo, Referrer
 
 
@@ -133,9 +133,18 @@ class FakeRegistryPort:
     ) -> str:
         if image_ref in self._fail_put:
             raise RegctlError(f"fake put_artifact failure for {image_ref}")
+        # Enforce the same preconditions as RegctlAdapter (knock/ports/registry.py's
+        # put_artifact docstring) so a use case tested green against this fake doesn't
+        # fail at exit 1 against the real adapter.
+        if not blob_path.is_file():
+            raise ArtifactBlobPathError(f"fake put_artifact: blob_path is not a file: {blob_path}")
+        for key in annotations:
+            if not key or "=" in key:
+                raise ArtifactAnnotationError(f"fake put_artifact: invalid annotation key {key!r}")
         self.artifacts.append((image_ref, artifact_type, blob_path, media_type, dict(annotations)))
-        # deterministic synthetic manifest digest, keyed on the path string (not its
-        # contents — the fake shouldn't need a real file on disk to seed a test). This is
-        # a *manifest* digest, like the real adapter returns, not a layer digest — those
-        # are never the same thing.
-        return f"sha256:{hashlib.sha256(str(blob_path).encode()).hexdigest()}"
+        # deterministic synthetic manifest digest, keyed on the file's own bytes — like
+        # the real adapter, this is a *manifest* digest, not a layer digest, but hashing
+        # the content (not just the path) keeps the fake able to catch a "digest didn't
+        # change after re-push" bug: two different files at the same tmp path, or the
+        # same content at two different paths, must (dis)agree the way real pushes would.
+        return f"sha256:{hashlib.sha256(blob_path.read_bytes()).hexdigest()}"

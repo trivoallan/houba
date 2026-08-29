@@ -92,5 +92,11 @@ class RegistryPort(Protocol):
         Takes a path rather than `put_referrer`'s in-memory `bytes`: regctl streams the
         file straight to the registry, so a large bundle (e.g. a skill zip) is never
         materialised in the Python process.
+
+        Raises `DomainError` (a subclass) rather than pushing, for two caller mistakes:
+        `blob_path` does not exist or is not a regular file (e.g. a directory — which
+        the registry would otherwise silently accept as a bogus layer); or an
+        `annotations` key is empty or contains '=' (which would be silently mangled
+        into a different, wrong annotation rather than rejected).
         """
         ...

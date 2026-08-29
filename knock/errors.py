@@ -7,6 +7,8 @@ from __future__ import annotations
 
 __all__ = [
     "AdapterError",
+    "ArtifactAnnotationError",
+    "ArtifactBlobPathError",
     "BuildkitError",
     "ConfigError",
     "CosignError",
@@ -32,6 +34,17 @@ class KnockError(Exception):
 
 class DomainError(KnockError):
     """Business logic or validation error (exit 1)."""
+
+
+class ArtifactAnnotationError(DomainError):
+    """A `put_artifact` annotation key is empty or contains '=' — regctl splits each
+    --annotation token on the first '=', so either would silently mangle the pushed
+    annotation (RC 0) rather than fail loudly."""
+
+
+class ArtifactBlobPathError(DomainError):
+    """A `put_artifact` blob_path does not exist or is not a regular file (e.g. a
+    directory, which regctl otherwise pushes as a bogus layer at RC 0)."""
 
 
 class PolicyValidationError(DomainError):

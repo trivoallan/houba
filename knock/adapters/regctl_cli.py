@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from knock.errors import DomainError, RegctlError
+from knock.errors import ArtifactAnnotationError, ArtifactBlobPathError, RegctlError
 from knock.ports.registry import ImageInfo, Referrer
 
 # What a resolved manifest digest looks like on stdout — used to catch regctl printing
@@ -221,11 +222,28 @@ class RegctlAdapter:
         media_type: str,
         annotations: dict[str, str],
     ) -> str:
-        # Fail before spawning: a directory (or missing path) as --file pushes a bogus
-        # layer with RC 0 (verified against regctl v0.11.5 — a plain directory becomes a
-        # 32-byte layer). That is a caller mistake, not an infrastructure failure.
-        if not blob_path.is_file():
-            raise DomainError(f"put_artifact: blob_path is not a file: {blob_path}")
+        # Fail before spawning. A directory as --file pushes a bogus 32-byte layer at RC
+        # 0 (verified against regctl v0.11.5) — regctl accepts it silently, so this has
+        # to catch it. A genuinely missing path already fails inside regctl itself today
+        # (verified: regctl exits non-zero with "no such file or directory"); this
+        # precondition doesn't change that it fails, it only reclassifies it from an
+        # AdapterError (exit 2) to a DomainError (exit 1), the same caller-mistake shape
+        # as the directory case. Path.is_file() itself would swallow a permission-denied
+        # OSError and return False, silently misreporting an infrastructure problem as a
+        # caller mistake — so this stats the path directly to keep that case an
+        # AdapterError (RegctlError) instead.
+        try:
+            st = blob_path.stat()
+        except (FileNotFoundError, NotADirectoryError) as e:
+            raise ArtifactBlobPathError(
+                f"put_artifact: blob_path does not exist: {blob_path}"
+            ) from e
+        except OSError as e:
+            raise RegctlError(f"put_artifact: cannot access blob_path {blob_path}: {e}") from e
+        if not stat.S_ISREG(st.st_mode):
+            raise ArtifactBlobPathError(
+                f"put_artifact: blob_path is not a regular file: {blob_path}"
+            )
         # regctl splits each --annotation token on the *first* '=', so an empty key or a
         # key containing '=' pushes a successful, silently wrong manifest (verified: key
         # "a=b" value "c" becomes annotation {"a": "b=c"}; key "" becomes {"": "v"}). A
@@ -234,7 +252,7 @@ class RegctlAdapter:
         # annotation value, so neither is rejected here.
         for key in annotations:
             if not key or "=" in key:
-                raise DomainError(
+                raise ArtifactAnnotationError(
                     f"put_artifact: invalid annotation key {key!r} "
                     "(must be non-empty and must not contain '=')"
                 )
