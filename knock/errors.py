@@ -25,6 +25,8 @@ __all__ = [
     "QueueUnavailableError",
     "RegctlError",
     "ScanReportError",
+    "SourceError",
+    "SourcePathError",
     "SyftError",
     "UnknownFormatError",
     "UnsupportedSourceError",
@@ -89,6 +91,15 @@ class UnsupportedSourceError(DomainError):
     run)."""
 
 
+class SourcePathError(DomainError):
+    """A policy names a subdirectory that does not exist in the fetched tree.
+
+    Exit 1: the operator's input is wrong, and unlike SourceError this is unambiguous —
+    we resolve it ourselves with `is_dir()`, with no subprocess in the way to confuse a
+    bad path with a failed transport.
+    """
+
+
 class AdapterError(KnockError):
     """Infrastructure / external-dependency error (exit 2)."""
 
@@ -131,6 +142,16 @@ class SyftError(AdapterError):
 
 class UsageOracleError(AdapterError):
     """Usage-oracle invocation error (external command unreachable or invalid output)."""
+
+
+class SourceError(AdapterError):
+    """An upstream source could not be fetched (git failed, or the binary is missing).
+
+    Exit 2: infrastructure. The operator's policy may be perfectly valid and the fetch
+    still fail — network, credentials, a server that refuses the request. An unknown ref
+    and a dead network both surface as a non-zero git exit; telling them apart would mean
+    parsing git's stderr, so both deliberately stay SourceError.
+    """
 
 
 class QueueError(AdapterError):
