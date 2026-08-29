@@ -2,7 +2,7 @@
 
 Stays free of ports types (codebase invariant: domain never imports ports). The
 use case bridges the oracle's `UsageObservation` into these primitives — mirroring
-how `use_cases/reconcile.py` bridges `ImageInfo` via `to_source_artifact`.
+how `use_cases/reconcile_registry.py` bridges `ImageInfo` via `to_source_artifact`.
 """
 
 from __future__ import annotations

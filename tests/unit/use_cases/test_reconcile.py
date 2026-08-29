@@ -11,11 +11,8 @@ from knock.domain.transforms.base import ResolvedResource, ResolvedStep
 from knock.domain.transforms.render import transform_version
 from knock.errors import ConfigError, PolicyValidationError, RegctlError
 from knock.ports.registry import ImageInfo
-from knock.use_cases.reconcile import (
-    reconcile_policies,
-    to_mirror_artifact,
-    to_source_artifact,
-)
+from knock.use_cases.reconcile import reconcile_policies
+from knock.use_cases.reconcile_registry import to_mirror_artifact, to_source_artifact
 from knock.use_cases.report import RunReport
 from tests.fakes.image_builder import FakeImageBuilder
 from tests.fakes.registry import FakeRegistryPort
