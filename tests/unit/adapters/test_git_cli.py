@@ -155,3 +155,54 @@ def test_a_wedged_git_is_killed_rather_than_hanging_the_fetch(
         GitAdapter(binary=str(wedged)).fetch(
             "https://example.invalid/r.git", "main", tmp_path / "work"
         )
+
+
+def test_resolve_returns_the_commit_for_a_lightweight_tag(upstream: Path) -> None:
+    revision = GitAdapter().resolve(str(upstream), "v1.0.0")
+    assert len(revision) == 40
+
+
+def test_resolve_agrees_with_fetch(upstream: Path, tmp_path: Path) -> None:
+    # The port's contract: a planner that skips on `resolve` and stamps on `fetch`
+    # would otherwise stamp a different revision than the one it compared.
+    assert GitAdapter().resolve(str(upstream), "v1.0.0") == (
+        GitAdapter().fetch(str(upstream), "v1.0.0", tmp_path / "w").revision
+    )
+
+
+def test_resolve_peels_an_annotated_tag_to_its_commit(upstream: Path, tmp_path: Path) -> None:
+    # `ls-remote` lists an annotated tag twice: the tag object, then `^{}` for the
+    # commit it points at. Returning the tag object would stamp a revision that is
+    # not the commit of the packaged software - exactly what ADR 0020 forbids.
+    _run(["git", "tag", "-a", "v2.0.0", "-m", "annotated"], upstream)
+    resolved = GitAdapter().resolve(str(upstream), "v2.0.0")
+    assert resolved == GitAdapter().fetch(str(upstream), "v2.0.0", tmp_path / "w").revision
+
+
+def test_resolve_returns_a_full_sha_unchanged(upstream: Path) -> None:
+    # `ls-remote` lists refs; it does not resolve an arbitrary object, so a policy
+    # pinned to a commit must short-circuit.
+    sha = GitAdapter().resolve(str(upstream), "v1.0.0")
+    assert GitAdapter().resolve(str(upstream), sha) == sha
+
+
+def test_resolve_raises_on_an_unknown_ref(upstream: Path) -> None:
+    with pytest.raises(SourceError, match="not found"):
+        GitAdapter().resolve(str(upstream), "no-such-ref")
+
+
+def test_resolve_resolves_a_branch(upstream: Path, tmp_path: Path) -> None:
+    assert GitAdapter().resolve(str(upstream), "main") == (
+        GitAdapter().fetch(str(upstream), "main", tmp_path / "w").revision
+    )
+
+
+def test_resolve_prefers_a_tag_over_a_same_named_branch(upstream: Path, tmp_path: Path) -> None:
+    # Pins knock's own precedence list, not git's DWIM: the ordering in `resolve` is a
+    # decision this codebase made and could regress on its own. Getting it wrong stamps
+    # the wrong commit in org.opencontainers.image.revision — the defect class ADR 0020
+    # exists to prevent — so it is worth a test rather than a comment alone.
+    _run(["git", "commit", "-q", "--allow-empty", "-m", "second"], upstream)
+    _run(["git", "branch", "v1.0.0"], upstream)  # same name as the existing tag
+    resolved = GitAdapter().resolve(str(upstream), "v1.0.0")
+    assert resolved == GitAdapter().fetch(str(upstream), "v1.0.0", tmp_path / "w").revision
