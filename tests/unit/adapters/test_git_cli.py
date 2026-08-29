@@ -12,10 +12,20 @@ from knock.adapters import git_cli
 from knock.adapters.git_cli import GitAdapter
 from knock.errors import InternalError, SourceError, SourcePathError
 
-# The fixture must build the same repository on every machine, so it ignores the
-# developer's ~/.gitconfig — `commit.gpgsign` / `tag.gpgsign` there would fail the
-# fixture's own commit, not the code under test.
-_ISOLATED_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}
+# Do not "simplify" this env away — without it the suite fails on a developer machine,
+# and not because of the code under test:
+#   * GIT_CONFIG_GLOBAL / GIT_CONFIG_SYSTEM: a developer with `commit.gpgsign = true` or
+#     `tag.gpgsign = true` in ~/.gitconfig gets exit 128 from the fixture's own `git
+#     commit` / `git tag`, before the adapter is ever called. Signing is common enough
+#     that the fixture has to build the same repository on every machine.
+#   * GIT_TERMINAL_PROMPT=0: a fetch that decides to ask for credentials would otherwise
+#     block on a prompt nobody can answer and hang the suite.
+_ISOLATED_ENV = {
+    **os.environ,
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+    "GIT_CONFIG_SYSTEM": "/dev/null",
+    "GIT_TERMINAL_PROMPT": "0",
+}
 
 
 def _run(args: list[str], cwd: Path) -> None:

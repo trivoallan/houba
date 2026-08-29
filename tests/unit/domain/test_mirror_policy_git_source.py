@@ -177,3 +177,79 @@ def test_git_source_accepts_allowlisted_url_schemes(url: str) -> None:
 def test_git_source_rejects_unsafe_url_schemes(url: str) -> None:
     with pytest.raises(ValidationError):
         GitSource.model_validate({"url": url})
+
+
+@pytest.mark.parametrize(
+    "ref",
+    ["HEAD", "main", "v1.0.0", "release/1.2", "a" * 40, "feature_x", "rc-1+build.5"],
+)
+def test_git_source_accepts_ordinary_refs(ref: str) -> None:
+    assert GitSource.model_validate({"url": "https://h/r.git", "ref": ref}).ref == ref
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "",
+        # git parses options after positionals, so a ref beginning with `-` is an
+        # option: `--upload-pack=<cmd>` makes git execute <cmd>. The adapter passes
+        # `--` as well; this is the domain half of that defense.
+        "-oProxyCommand=id",
+        "--upload-pack=id",
+        "-c",
+        # A revision range, not a ref — and `..` is the traversal shape besides.
+        "main..evil",
+        # NUL and whitespace both reach subprocess as-is.
+        "main\x00",
+        "ma in",
+        "main\n",
+        # git's own check-ref-format rejects these metacharacters.
+        "HEAD@{1}",
+        "refs:main",
+        "main^",
+        "main~1",
+        "re*f",
+    ],
+)
+def test_git_source_rejects_unsafe_refs(ref: str) -> None:
+    with pytest.raises(ValidationError):
+        GitSource.model_validate({"url": "https://h/r.git", "ref": ref})
+
+
+@pytest.mark.parametrize(
+    "path",
+    [".claude/skills/probe", "packages/inner", "skills", "a_b/c-d.e"],
+)
+def test_git_source_accepts_ordinary_paths(path: str) -> None:
+    assert GitSource.model_validate({"url": "https://h/r.git", "path": path}).path == path
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "",
+        # The adapter refuses these too; this stops the policy at the door instead.
+        "../etc",
+        "packages/../../etc",
+        "/etc",
+        "-x",
+        "a\x00",
+        "a b",
+    ],
+)
+def test_git_source_rejects_unsafe_paths(path: str) -> None:
+    with pytest.raises(ValidationError):
+        GitSource.model_validate({"url": "https://h/r.git", "path": path})
+
+
+def test_an_unsafe_ref_in_a_policy_is_a_policy_validation_error_exit_1() -> None:
+    # End-to-end through the real entry point: the operator gets exit 1 and a message
+    # naming the field, not a traceback and not an adapter-level failure.
+    from knock.errors import exit_code_for
+
+    text = GIT_POLICY.replace("ref: v1.2.0", "ref: --upload-pack=id")
+    assert "--upload-pack" in text, "GIT_POLICY no longer pins `ref: v1.2.0`"
+    with pytest.raises(PolicyValidationError) as excinfo:
+        parse_mirror_policy(text)
+    assert "ref" in str(excinfo.value)
+    assert exit_code_for(excinfo.value) == 1

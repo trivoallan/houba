@@ -69,15 +69,57 @@ def _validate_git_url(value: str) -> str:
 GitUrl = Annotated[str, AfterValidator(_validate_git_url)]
 
 
+# `ref` and `path` are the other two operator-authored strings that reach `subprocess`,
+# and neither had a validator. A ref beginning with `-` is the sharp one: git parses
+# options after positionals, so `ref: --upload-pack=<cmd>` makes git execute <cmd>
+# (verified against git 2.54.0). The adapter also passes `--` before its positionals;
+# these validators are the domain half of that defense, and refuse the policy before any
+# adapter runs, naming the field the operator has to fix.
+#
+# Deliberately narrower than git's `check-ref-format` rather than a port of it: the
+# domain layer is pure, so it cannot shell out to git to ask, and a conservative
+# allowlist that rejects a valid-but-exotic ref is a clear, fixable error — whereas
+# anything this lets through reaches a subprocess at the intake front door.
+_GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/+-]*\Z")
+
+# Same class, but a leading `.` is allowed: `.claude/skills/<name>` is an ordinary
+# location for a skill. A leading `/` is not — that is an absolute path, not a
+# subdirectory of the fetched tree.
+_GIT_PATH_RE = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._/+-]*\Z")
+
+
+def _validate_git_ref(value: str) -> str:
+    # `..` is a revision range to git and a traversal to everything else; never a ref.
+    if not _GIT_REF_RE.match(value) or ".." in value:
+        raise ValueError(
+            f"invalid git ref {value!r}: expected a branch, tag, or commit sha "
+            "([A-Za-z0-9._/+-], starting with an alphanumeric, with no '..')"
+        )
+    return value
+
+
+def _validate_git_path(value: str) -> str:
+    if not _GIT_PATH_RE.match(value) or ".." in value:
+        raise ValueError(
+            f"invalid path {value!r}: expected a relative sub-directory of the "
+            "repository ([A-Za-z0-9._/+-], not starting with '/' or '-', with no '..')"
+        )
+    return value
+
+
+GitRef = Annotated[str, AfterValidator(_validate_git_ref)]
+GitPath = Annotated[str, AfterValidator(_validate_git_path)]
+
+
 class GitSource(_CamelModel):
     url: GitUrl = Field(
         description="Upstream git repository URL, e.g. `https://github.com/o/r.git`."
     )
-    ref: str = Field(
+    ref: GitRef = Field(
         default="HEAD",
         description="Branch, tag, or commit to ingest. Resolved to an immutable commit sha.",
     )
-    path: str | None = Field(
+    path: GitPath | None = Field(
         default=None,
         description="Sub-directory holding the artifact; the repository root when omitted.",
     )
