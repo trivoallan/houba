@@ -7,8 +7,11 @@ from __future__ import annotations
 
 __all__ = [
     "AdapterError",
+    "ArchiveDestinationWriteError",
     "ArchiveError",
     "ArchiveLayoutError",
+    "ArchiveSizeMismatchError",
+    "ArchiveSourceReadError",
     "ArtifactAnnotationError",
     "ArtifactBlobPathError",
     "BuildkitError",
@@ -60,6 +63,13 @@ class ArtifactBlobPathError(DomainError):
     """A `put_artifact` blob_path does not exist or is not a regular file (e.g. a
     directory, which regctl otherwise pushes as a bogus layer at RC 0)."""
 
+    """A source tree, or a planned entry list, cannot be packaged safely: a symlink, a
+    path that escapes the root, a non-canonical or duplicate archive path, an
+    oversized tree, or a tree with no plugin marker. Raised both while planning
+    (`knock.domain.packaging.plan_archive`) and while writing
+    (`knock.adapters.zip_writer.write_archive`), since the writer re-checks what it
+    can independently verify from the filesystem rather than trusting the plan."""
+
 
 class PolicyValidationError(DomainError):
     """`MirrorPolicy` YAML invalid (schema, unknown field, inconsistent spec)."""
@@ -81,6 +91,26 @@ class UnsupportedSourceError(DomainError):
 
 class AdapterError(KnockError):
     """Infrastructure / external-dependency error (exit 2)."""
+
+
+class ArchiveSourceReadError(AdapterError):
+    """A source file could not be read while writing a planned archive (missing,
+    unreadable, or a broken symlink) — a filesystem fault, not an invalid plan."""
+
+
+class ArchiveSizeMismatchError(AdapterError):
+    """A source file's byte count no longer matches the size `plan_archive` recorded
+    for it when the archive is written — a concurrent-modification race caught at the
+    write boundary (the tree changed underneath the packaging step), not a bug and not
+    an invalid plan. Exit 2 is chosen because the remedy is environmental — re-run
+    against a quiescent tree — not because the adapter itself misbehaved."""
+
+
+class ArchiveDestinationWriteError(AdapterError):
+    """The archive's destination could not be created, written to, or finalised
+    (unwritable directory, destination is itself a directory, disk full at flush) — a
+    filesystem fault on the output side, mirroring `ArchiveSourceReadError` on the
+    input side."""
 
 
 class RegctlError(AdapterError):

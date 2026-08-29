@@ -28,6 +28,8 @@ __all__ = [
     "PLUGIN_MARKER_FILES",
     "ArchiveEntry",
     "SourceFile",
+    "path_escapes_root",
+    "path_is_canonical",
     "plan_archive",
 ]
 
@@ -89,11 +91,28 @@ class SourceFile:
     has a `/` after it, and as a file-marker candidate otherwise. A caller that also
     listed directories as entries would silently break that inference.
 
-    `size` and `is_symlink` MUST be read from `lstat` on this entry itself, never from
-    `stat` (i.e. never resolved through a symlink). `is_symlink` is the field this
-    module's symlink refusal actually rests on: a caller that resolves links before
-    reporting, and passes `is_symlink=False` for what is really a symlink, defeats that
-    refusal entirely — silently, with nothing here able to detect it.
+    The two measured fields have **different** rules, and conflating them breaks one of
+    them:
+
+    - `is_symlink` MUST be determined without following the link (`lstat`, or
+      `Path.is_symlink()`). It is the field this module's symlink refusal actually rests
+      on: a caller that resolves links before reporting, and passes `is_symlink=False`
+      for what is really a symlink, defeats that refusal entirely — silently, with
+      nothing here able to detect it.
+    - `size` MUST equal the exact byte count a `read_bytes()` of this path would return
+      at the moment the tree was walked, which means it follows links (`stat`). A writer
+      turning this plan into bytes compares each entry's actual byte count against it to
+      catch the tree changing between planning and writing, so it has to be the number
+      that check can trust.
+
+    For every entry that survives planning the two coincide, because symlinks are
+    refused — and that is exactly why `is_symlink` cannot be inferred from `size`. A
+    `stat`-based size for a symlink matches `read_bytes()` on its *target* precisely, so
+    a byte-count check alone can never tell a symlink from a regular file of the same
+    length. Both the planner and any writer must refuse symlinks on their own evidence.
+
+    There is no tree-walking adapter in this repo yet, so this rule is written down for
+    whoever builds one.
     """
 
     path: str
@@ -104,14 +123,17 @@ class SourceFile:
 
 @dataclass(frozen=True)
 class ArchiveEntry:
-    """One planned archive member: where it goes and the mode it is stored with.
+    """One planned archive member: where it goes, the mode it is stored with, and the
+    size it was measured at during planning.
 
     `path` is the *normalised* form of the source path (see `plan_archive`) — not
-    necessarily the exact string the caller supplied.
+    necessarily the exact string the caller supplied. `size` lets a writer catch the
+    tree changing underneath it between planning and writing.
     """
 
     path: str
     mode: int
+    size: int
 
 
 def _escape_reason(path: str) -> str | None:
@@ -134,6 +156,34 @@ def _escape_reason(path: str) -> str | None:
     if normalised == ".." or normalised.startswith("../") or normalised == ".":
         return "escapes"
     return None
+
+
+def path_escapes_root(path: str) -> bool:
+    """True if `path` is unsafe to write into an archive underneath the tree root.
+
+    Public, unlike the `_escape_reason` it wraps, because *two* boundaries must enforce
+    this: `plan_archive` when it builds the plan, and any writer that turns a plan into
+    archive bytes. A writer is separately reachable with hand-built entries, so the
+    planner being careful does not make the writer safe. One predicate, two enforcement
+    points.
+    """
+    return _escape_reason(path) is not None
+
+
+def path_is_canonical(path: str) -> bool:
+    """True if `path` is already in the exact form an archive member must carry.
+
+    Deliberately *not* folded into `path_escapes_root`: a non-canonical path does not
+    escape the root, and the two rules belong at different boundaries. `plan_archive`
+    normalises on the way in, so a caller may legitimately hand it `./SKILL.md` or the
+    `my-skill-1.0/` wrapper a `git archive` tarball produces. A *writer*, by contrast,
+    receives entries that have already been through that, so a non-canonical arcname
+    there means the entry was hand-built and bypassed the planner.
+
+    The reproducibility argument for this archive format rests on canonical, sorted
+    entries; two differently-spelled arcnames for one real path silently break it.
+    """
+    return posixpath.normpath(path) == path
 
 
 def _root_marker(paths: list[str]) -> bool:
@@ -291,6 +341,10 @@ def plan_archive(
         raise _layout_error(paths)
 
     return [
-        ArchiveEntry(path=path, mode=0o755 if file.is_executable else 0o644)
+        ArchiveEntry(
+            path=path,
+            mode=0o755 if file.is_executable else 0o644,
+            size=file.size,
+        )
         for file, path in sorted(normalised, key=lambda pair: pair[1])
     ]
