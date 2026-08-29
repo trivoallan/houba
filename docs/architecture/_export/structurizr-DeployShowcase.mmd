@@ -1,0 +1,60 @@
+graph LR
+  linkStyle default fill:#ffffff
+
+  subgraph diagram ["Deployment View: knock - Showcase — public proof (GitHub Actions -> GHCR)"]
+    style diagram fill:#ffffff,stroke:#ffffff
+
+    subgraph 271 ["GitHub Actions runner"]
+      style 271 fill:#ffffff,stroke:#444444,color:#ffffff
+
+      272("<div style='font-weight: bold'>Pinned policy checkout</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: git]</div><div style='font-size: 80%; margin-top:10px'>actions/checkout of this repo<br />at KNOCK_VERSION -><br />docs/examples/reference<br />(busybox copy + debian-tz<br />rebuild). Never copied into<br />the showcase repo: the<br />visitor verifies the exact<br />file on the docs site.</div>")
+      style 272 fill:#8a94a0,stroke:#606770,color:#ffffff
+      subgraph 273 ["container: knock"]
+        style 273 fill:#ffffff,stroke:#444444,color:#ffffff
+
+        274("<div style='font-weight: bold'>knock CLI</div><div style='font-size: 70%; margin-top: 0px'>[Container: Python · Typer]</div><div style='font-size: 80%; margin-top:10px'>Reconcile engine: loads<br />MirrorPolicy files, mirrors<br />or rebuilds images and stamps<br />them with provenance. Runs as<br />a CLI / Job; the runtime<br />image bundles regctl +<br />buildctl.</div>")
+        style 274 fill:#2563c9,stroke:#19458c,color:#ffffff
+      end
+
+      subgraph 275 ["container: buildkitd"]
+        style 275 fill:#ffffff,stroke:#444444,color:#ffffff
+
+        276("<div style='font-weight: bold'>BuildKit</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>OCI build engine knock drives<br />to rebuild and harden images.</div>")
+        style 276 fill:#69707a,stroke:#494e55,color:#ffffff
+      end
+
+      278("<div style='font-weight: bold'>Bypass push</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: regctl]</div><div style='font-size: 80%; margin-top:10px'>regctl image copy of an image<br />that never came through the<br />front door — the manual<br />counter-example the README's<br />commands fail on.</div>")
+      style 278 fill:#8a94a0,stroke:#606770,color:#ffffff
+      279("<div style='font-weight: bold'>verify.sh</div><div style='font-size: 70%; margin-top: 0px'>[Infrastructure Node: regctl / cosign]</div><div style='font-size: 80%; margin-top:10px'>The README's own commands,<br />replayed against what was<br />just published: read the<br />stamp, list the SBOM<br />referrer, verify the<br />attestation. knock has no<br />transaction, so this is what<br />stops a half-stamped publish<br />from going public.</div>")
+      style 279 fill:#8a94a0,stroke:#606770,color:#ffffff
+    end
+
+    subgraph 280 ["GitHub / Sigstore"]
+      style 280 fill:#ffffff,stroke:#444444,color:#ffffff
+
+      281("<div style='font-weight: bold'>Destination Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>The organization's private<br />OCI registries — any<br />dist-spec registry (Harbor,<br />Zot, …); destination for the<br />stamped images, addressed<br />generically via regctl.</div>")
+      style 281 fill:#69707a,stroke:#494e55,color:#ffffff
+      283("<div style='font-weight: bold'>Signing / Key service</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>KMS or Fulcio (keyless CA)<br />that knock's attestor uses to<br />sign in-toto attestations<br />(DSSE). Trust is org<br />configuration, not baked in.</div>")
+      style 283 fill:#69707a,stroke:#494e55,color:#ffffff
+      285("<div style='font-weight: bold'>Transparency log (Rekor)</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>Optional append-only<br />signature log; blank in<br />air-gapped orgs. knock can<br />point at one but never<br />deploys it.</div>")
+      style 285 fill:#0f766e,stroke:#0a524d,color:#ffffff
+    end
+
+    subgraph 287 ["Internet"]
+      style 287 fill:#ffffff,stroke:#444444,color:#ffffff
+
+      288("<div style='font-weight: bold'>Source Registries</div><div style='font-size: 70%; margin-top: 0px'>[Software System]</div><div style='font-size: 80%; margin-top:10px'>External public OCI<br />registries (Docker Hub, Quay,<br />GHCR) the images originate<br />from.</div>")
+      style 288 fill:#69707a,stroke:#494e55,color:#ffffff
+    end
+
+    274-. "<div>Submits the hardening rebuild<br />(internal CA trust, package<br />mirror)</div><div style='font-size: 70%'>[buildctl]</div>" .->276
+    274-. "<div>Reads mirror state; copies,<br />stamps, retags, deletes</div><div style='font-size: 70%'>[regctl (dist-spec)]</div>" .->281
+    274-. "<div>Signs attestations (DSSE)</div><div style='font-size: 70%'>[cosign]</div>" .->283
+    274-. "<div>Records the signature<br />(optional)</div><div style='font-size: 70%'>[cosign / rekor]</div>" .->285
+    274-. "<div>Lists tags, inspects digests,<br />copies images</div><div style='font-size: 70%'>[regctl]</div>" .->288
+    274-. "<div>Reads the pinned policies</div><div style='font-size: 70%'>[filesystem]</div>" .->272
+    278-. "<div>Pushes an unstamped, unsigned<br />image</div><div style='font-size: 70%'>[regctl]</div>" .->281
+    279-. "<div>Re-reads the stamp and the<br />SBOM referrer</div><div style='font-size: 70%'>[regctl]</div>" .->281
+    279-. "<div>Verifies the attestation<br />identity</div><div style='font-size: 70%'>[cosign]</div>" .->285
+
+  end
