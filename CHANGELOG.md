@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/trivoallan/knock/compare/v0.9.0...v0.9.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **ci:** publish the image again on a freshly cut release ([#246](https://github.com/trivoallan/knock/issues/246)) ([bb42af2](https://github.com/trivoallan/knock/commit/bb42af2fc94900642212ee9a2bcb1de6124b9ca8))
+
 ## [0.9.0](https://github.com/trivoallan/knock/compare/v0.8.0...v0.9.0) (2026-08-29)
 
 
