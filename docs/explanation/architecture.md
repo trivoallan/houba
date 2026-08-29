@@ -44,10 +44,10 @@ The layering is load-bearing: pure `domain/` holds all business logic with no I/
 ```mermaid
 flowchart TD
     cli["<b>cli/</b> — Typer, thin<br/>reconcile · purge · attach · audit · gc · verify · scan · version · render · _di (composition root)"]
-    uc["<b>use_cases/</b><br/>loader · reconcile (orchestrator) · purge · attach · audit · gc · verify · scan_worker · report (RunReport)<br/><i>receive ports by keyword injection — never import adapters</i>"]
+    uc["<b>use_cases/</b><br/>loader · reconcile (driver) · reconcile_registry · reconcile_git · policy_planner · intake · purge · attach · audit · gc · verify · scan_worker · report (RunReport)<br/><i>receive ports by keyword injection — never import adapters</i>"]
     domain["<b>domain/</b> — pure<br/>selection · reconcile · stamp · sbom · transforms/* · …"]
-    ports["<b>ports/</b> — typing.Protocol<br/>RegistryPort · ImageBuilderPort · AttestorPort · SbomGeneratorPort · UsageOraclePort · Reporter · ClockPort"]
-    adapters["<b>adapters/</b><br/>RegctlAdapter · BuildkitAdapter · CosignAdapter · SyftAdapter · CommandUsageAdapter · StructlogReporter · SystemClock"]
+    ports["<b>ports/</b> — typing.Protocol<br/>RegistryPort · ImageBuilderPort · SourcePort · ArchiverPort · AttestorPort · SbomGeneratorPort · UsageOraclePort · Reporter · ClockPort"]
+    adapters["<b>adapters/</b><br/>RegctlAdapter · BuildkitAdapter · GitAdapter · LocalArchiver · CosignAdapter · SyftAdapter · CommandUsageAdapter · StructlogReporter · SystemClock"]
 
     cli --> uc
     uc --> domain
@@ -112,6 +112,13 @@ flowchart TD
 ```
 
 To walk the rebuild path step by step, see [Rebuild & harden an image](../how-to/rebuild-and-harden.md).
+
+Both paths above start from a registry. A policy can also declare a **git** source, which selects a
+third path: the repository is fetched at an immutable commit, the tree is packaged into a
+byte-reproducible zip and placed as a stamped OCI artifact. It converges on the same `reconcile`
+run — one immutable `sha-<revision>` tag per placed revision plus a moving alias for the ref name —
+and it is how the `skill` artifact class is placed. See the
+[agent-skill example](/examples) and [ADR 0049](https://github.com/trivoallan/knock/blob/main/docs/architecture/decisions/0049-reconciling-git-sources.md).
 
 ## Why the label is the product
 

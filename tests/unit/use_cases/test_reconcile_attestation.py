@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+from knock.adapters.local_archiver import LocalArchiver
 from knock.config import CACertSource, PackageMirror, RegistryConfig
 from knock.domain.attestation import COSIGN_ATTESTATION_ARTIFACT_TYPE, PREDICATE_TYPE
 from knock.domain.mirror_policy import MirrorPolicy, parse_mirror_policy
@@ -13,6 +14,7 @@ from tests.fakes.attestor import FakeAttestor
 from tests.fakes.image_builder import FakeImageBuilder
 from tests.fakes.registry import FakeRegistryPort
 from tests.fakes.reporter import FakeReporter
+from tests.fakes.source import FakeSourcePort
 
 NOW = datetime(2026, 6, 11, tzinfo=UTC)
 
@@ -42,6 +44,8 @@ def _run(policy: MirrorPolicy, registry: FakeRegistryPort, **over: object) -> Ru
     kwargs: dict[str, object] = dict(
         registry=registry,
         builder=FakeImageBuilder(),
+        source=FakeSourcePort(),
+        archiver=LocalArchiver(),
         roster={"local": RegistryConfig(host="reg.local")},
         ca_certs={"corp": CACertSource(pem="PEMDATA")},
         package_mirrors={"corp": PackageMirror(apt="https://mirror.corp")},

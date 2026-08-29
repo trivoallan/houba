@@ -341,6 +341,33 @@ class Spec(_CamelModel):
                 )
         return self
 
+    @model_validator(mode="after")
+    def _skill_has_no_retention(self) -> Self:
+        """A skill is never deleted, so declaring retention is refused, not ignored.
+
+        The soft-delete pipeline asks a usage oracle "is this still running in prod".
+        A skill is *installed on workstations*, so the oracle has no answer, and
+        deleting a revision someone pinned breaks their install with no warning. An
+        author who writes `archive` here believes their policy prunes; telling them it
+        does not is the whole point of refusing rather than ignoring.
+        """
+        if self.artifact_type is not ArtifactType.skill:
+            return self
+        kind = self.artifact_type.value
+        if self.deletion_mode is not None:
+            raise PolicyValidationError(f"artifactType '{kind}' must not declare a deletion mode")
+        if self.defaults is not None and self.defaults.archive is not None:
+            raise PolicyValidationError(
+                f"artifactType '{kind}' must not declare a retention policy"
+            )
+        for imp in self.imports:
+            if imp.archive is not None:
+                raise PolicyValidationError(
+                    f"artifactType '{kind}' must not declare a retention policy "
+                    f"(import '{imp.name}')"
+                )
+        return self
+
 
 class Metadata(_CamelModel):
     name: str = Field(

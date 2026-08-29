@@ -177,7 +177,7 @@ def test_json_report_counts_failed_policies() -> None:
         name="a",
         source="s",
         status="failed",
-        error=ErrorInfo(type="UnsupportedSourceError", message="boom", exit_code=1),
+        error=ErrorInfo(type="PolicyValidationError", message="boom", exit_code=1),
         totals=Counts(),
         targets=[],
     )

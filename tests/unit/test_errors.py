@@ -88,6 +88,17 @@ def test_source_path_error_is_domain_error_exit_1() -> None:
     assert exit_code_for(SourcePathError("no such subdir")) == 1
 
 
+def test_source_revision_mismatch_is_adapter_error_exit_2() -> None:
+    # A ref that moved mid-run is environmental, like ArchiveSizeMismatchError: the
+    # policy is valid and the remedy is to re-run, so exit 1 ("your input is wrong")
+    # would be a lie. Not a SourceError either — nothing failed to fetch.
+    from knock.errors import SourceError, SourceRevisionMismatchError
+
+    assert issubclass(SourceRevisionMismatchError, AdapterError)
+    assert not issubclass(SourceRevisionMismatchError, SourceError)
+    assert exit_code_for(SourceRevisionMismatchError("ref moved")) == 2
+
+
 def test_queue_error_is_adapter_error_exit_2():
     assert issubclass(QueueError, AdapterError)
     assert exit_code_for(QueueError("boom")) == 2

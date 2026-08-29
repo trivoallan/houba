@@ -7,6 +7,11 @@ Date: 2026-08-29
 Accepted, and implemented on `feat/skill-intake-impl`. A CLI verb is deliberately outside this
 slice's scope, so nothing calls the intake path in production yet — see Consequences.
 
+**Superseded in part by [49. Reconciling git sources](0049-reconciling-git-sources.md)**, which
+closes the "reconcile merge" listed as deferred below: `reconcile` now places git-sourced policies
+itself, so the intake path has a production caller and a `skill` policy is no longer reported as
+failed. The Consequences below are preserved as the record of this slice, not as current behaviour.
+
 Builds on [1. MirrorPolicy format & reconcile contract](0001-mirror-policy-format.md),
 [20. Revision semantics](0020-revision-semantics.md),
 [41. `knock verify` — read-side gate](0041-knock-verify-read-side-gate.md).

@@ -22,6 +22,17 @@ class FetchedSource:
 
 
 class SourcePort(Protocol):
+    def resolve(self, origin: str, ref: str) -> str:
+        """Resolve `ref` to its immutable revision **without materialising a tree**.
+
+        Separate from `fetch` so the reconcile plan phase can decide whether anything
+        needs importing at all: a `--dry-run` that had to clone every repository to
+        say "nothing to do" would not be a dry run. Must agree with `fetch`'s
+        `FetchedSource.revision` for the same inputs, or a planner would skip on one
+        value and stamp another.
+        """
+        ...
+
     def fetch(
         self, origin: str, ref: str, workdir: Path, *, path: str | None = None
     ) -> FetchedSource: ...

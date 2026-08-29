@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+from knock.adapters.local_archiver import LocalArchiver
 from knock.config import RegistryConfig
 from knock.domain.deletion_mode import DeletionMode
 from knock.domain.lifecycle import PENDING_DELETION_ARTIFACT_TYPE
@@ -10,6 +11,7 @@ from knock.use_cases.report import RunReport
 from tests.fakes.image_builder import FakeImageBuilder
 from tests.fakes.registry import FakeRegistryPort
 from tests.fakes.reporter import FakeReporter
+from tests.fakes.source import FakeSourcePort
 
 _NOW = datetime(2026, 6, 12, tzinfo=UTC)
 
@@ -67,6 +69,8 @@ def _run(reg: FakeRegistryPort, mode: str, *, global_mode: DeletionMode) -> RunR
         [parse_mirror_policy(_POLICY.format(mode=mode))],
         registry=reg,
         builder=FakeImageBuilder(),
+        source=FakeSourcePort(),
+        archiver=LocalArchiver(),
         roster=_roster(),
         ca_certs={},
         package_mirrors={},
@@ -226,6 +230,8 @@ def _run_retention(
         [parse_mirror_policy(policy)],
         registry=reg,
         builder=FakeImageBuilder(),
+        source=FakeSourcePort(),
+        archiver=LocalArchiver(),
         roster=_roster(),
         ca_certs={},
         package_mirrors={},

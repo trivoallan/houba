@@ -1,7 +1,8 @@
 """Structured reconcile result (stdout machine contract).
 
 Tree: run → policies → targets → variants → operations, with `Counts` aggregated
-at each level. Deletions attach to TargetReport.operations (the domain returns
+at each level, and the derivations over it (`node_status`, `merge_counts`,
+`report_exit_code`). Deletions attach to TargetReport.operations (the domain returns
 to_delete at the import/target level, not per variant). Published as JSON Schema.
 """
 
@@ -76,6 +77,53 @@ class RunReport(BaseModel):
         Computed rather than stored so it cannot drift from `policies`.
         """
         return sum(1 for p in self.policies if p.status == "failed")
+
+
+def node_status(operations: list[Operation]) -> NodeStatus:
+    """Classify a node from the operations under it.
+
+    Lives here, not on a planner: it is pure report-shape arithmetic over
+    `Operation`, with no coupling to any source class, and every planner needs the
+    identical classification.
+    """
+    if all(op.error is None for op in operations):
+        return "ok"
+    return "partial" if any(op.error is None for op in operations) else "failed"
+
+
+def merge_counts(parts: list[Counts]) -> Counts:
+    """Sum `Counts` field-wise. Pure, source-class agnostic — see `node_status`."""
+    return Counts(
+        imported=sum(c.imported for c in parts),
+        updated=sum(c.updated for c in parts),
+        deleted=sum(c.deleted for c in parts),
+        aliased=sum(c.aliased for c in parts),
+        skipped=sum(c.skipped for c in parts),
+        marked=sum(c.marked for c in parts),
+        attested=sum(c.attested for c in parts),
+        sbom=sum(c.sbom for c in parts),
+        failed=sum(c.failed for c in parts),
+    )
+
+
+def counts_of(operations: list[Operation]) -> Counts:
+    """Count operations by kind, failures apart. Pure, source-class agnostic — see
+    `node_status`: every planner assembles its report from the same arithmetic."""
+
+    def n(kind: str) -> int:
+        return sum(1 for op in operations if op.error is None and op.kind == kind)
+
+    return Counts(
+        imported=n("imported"),
+        updated=n("updated"),
+        deleted=n("deleted"),
+        aliased=n("aliased"),
+        skipped=n("skipped"),
+        marked=n("marked"),
+        attested=n("attested"),
+        sbom=n("sbom"),
+        failed=sum(1 for op in operations if op.error is not None),
+    )
 
 
 def report_exit_code(report: RunReport) -> int:

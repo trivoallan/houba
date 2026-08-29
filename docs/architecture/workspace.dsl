@@ -37,7 +37,11 @@ workspace "knock" "Single front door / stamper for external container images." {
                 }
                 group "Use cases" {
                     ucLoader = component "loader" "Loads and parses every MirrorPolicy file in a directory." "Python"
-                    ucReconcile = component "reconcile_policies" "Orchestrator: concurrent plan-then-apply over all policies, isolated per policy, shardable for scale-out." "Python"
+                    ucReconcile = component "reconcile_policies" "Driver: enforces the ownership invariant, shards, partitions policies by source class, runs one collision check across every planner's aliases, then plan-then-apply. Isolated per policy, shardable for scale-out." "Python"
+                    ucPolicyPlanner = component "policy_planner" "The PolicyPlanner protocol (handles / plan / apply): one implementation per source class. An internal orchestration seam between use cases, deliberately NOT a port — ports/ is reserved for I/O boundaries an adapter implements." "typing.Protocol"
+                    ucReconcileRegistry = component "reconcile_registry" "The registry-sourced planner: tag selection, variant expansion, copy or hardening rebuild, stamp, retention and deletion." "Python"
+                    ucReconcileGit = component "reconcile_git" "The git-sourced planner: resolve the ref to a revision, compare against the destination's sha-<revision> tags and moving ref-name alias, then import and/or re-point. Convergence = revision placed AND alias current." "Python"
+                    ucIntake = component "intake" "Fetch, verify the revision, stamp, package into a byte-reproducible zip and put one skill as an OCI artifact. Refuses a ref that moved between the caller's resolve and this fetch, before anything is pushed." "Python"
                     ucPurge = component "purge (use case)" "Catalog-walks the registry for pending-deletion referrers; asks the usage oracle per digest; hard-deletes only the safely-unused. Fail-closed: oracle error ⇒ nothing purged." "Python"
                     ucAudit = component "audit (use case)" "Catalog-walks the registry and classifies each image as stamped or not; emits the coverage report + exit code." "Python"
                     ucAttach = component "attach (use case)" "Resolves the subject digest, summarizes the ingested scan report, and puts it as a stamped OCI referrer." "Python"
@@ -58,6 +62,7 @@ workspace "knock" "Single front door / stamper for external container images." {
                     domSbom = component "SBOM facts" "SBOM format media-types and referrer annotation builder (domain/sbom.py)." "Pure Python" "Domain"
                     domVerify = component "verify logic" "Pure gate evaluation: Requirement enum; evaluate() maps stamp/sbom presence and verified scan predicates to a VerifyReport (pass/fail + detail per requirement). Reuses gate_breached; fail-closed on missing/stale/unverifiable attestation." "Pure Python" "Domain"
                     domScanQueue = component "scan queue logic" "Pure scan decision logic (domain/scan_queue.py): determines whether a placed digest needs scanning, deduplicates, and builds the ScanOutcome payload. No I/O. Under the ≥90 % domain gate + mypy --strict." "Pure Python" "Domain"
+                    domPackaging = component "packaging planner" "Pure archive plan over a walked tree (domain/packaging.py): refuses symlinks, escapes, backslashes, collisions, archives over 100 MiB, and trees with no recognisable plugin layout. Excludes VCS metadata at the walker, so every source inherits the protection." "Pure Python" "Domain"
                 }
                 group "Ports" {
                     portRegistry = component "RegistryPort" "OCI registry ops: list, inspect, copy, annotate, delete, login, referrer list/put/delete; list_repositories (catalog walk for purge)." "typing.Protocol" "Port"
@@ -68,6 +73,8 @@ workspace "knock" "Single front door / stamper for external container images." {
                     portAttestor = component "AttestorPort" "Sign an in-toto Statement (DSSE) + attach it as an OCI referrer. Verify: cosign verify-attestation over a predicate type → list[VerifiedPredicate]." "typing.Protocol" "Port"
                     portSbomGenerator = component "SbomGeneratorPort" "Generate package-level SBOM(s) for a placed image by digest; returns one document per format." "typing.Protocol" "Port"
                     portQueue = component "QueuePort" "Enqueue a placed-image digest for scanning; claim the next Reservation (XAUTOCLAIM semantics); ACK or NACK. Optional — only present when knock-oci[scan] is installed." "typing.Protocol" "Port"
+                    portSource = component "SourcePort" "Non-registry upstream ingestion. resolve(origin, ref) returns the immutable revision WITHOUT materialising a tree, so the plan phase never clones; fetch(origin, ref, workdir) materialises it. The two must agree for the same inputs. Generic on purpose: git is the first such source, not the only one." "typing.Protocol" "Port"
+                    portArchiver = component "ArchiverPort" "Walks a fetched tree and writes a byte-reproducible zip from a planned entry list. Deliberately never faked — its defects are properties of a real filesystem." "typing.Protocol" "Port"
                 }
                 group "Adapters" {
                     adRegctl = component "RegctlAdapter" "Drives the regctl CLI via subprocess." "regctl" "Adapter"
@@ -78,6 +85,8 @@ workspace "knock" "Single front door / stamper for external container images." {
                     adCosign = component "CosignAdapter" "Drives the cosign CLI via subprocess (keyless | kms | key)." "cosign" "Adapter"
                     adSyft = component "SyftAdapter" "Drives the syft CLI via subprocess; config-file auth/TLS; lazy binary resolution." "syft" "Adapter"
                     adRedisStreams = component "RedisStreamsAdapter" "Drives redis-py 8 Streams (XADD / XAUTOCLAIM / XACK / XTRIM); consumer-group semantics; RESP3. Part of the knock-oci[scan] optional extra." "redis-py 8" "Adapter"
+                    adGit = component "GitAdapter" "Drives the git CLI via subprocess: ls-remote to resolve a ref without cloning, depth-1 fetch + checkout to materialise the tree. Refuses a non-empty workdir; '--' before positionals blocks option injection from a policy field." "git" "Adapter"
+                    adArchiver = component "LocalArchiver" "Walks a real filesystem tree and writes the reproducible zip (fixed date_time, explicit ZipInfo, atomic replace)." "stdlib" "Adapter"
                 }
                 config = component "config" "Reads KNOCK_* settings + roster resolvers — the only os.environ reader." "Pydantic Settings"
 
@@ -95,6 +104,7 @@ workspace "knock" "Single front door / stamper for external container images." {
         redisBroker = softwareSystem "Redis (Streams)" "Message broker for the scan pipeline: reconcile enqueues placed-image digests; scan workers claim reservations via XAUTOCLAIM (consumer groups). Optional — only required when the knock-oci[scan] extra is installed." "External"
 
         sourceRegistries = softwareSystem "Source Registries" "External public OCI registries (Docker Hub, Quay, GHCR) the images originate from." "External"
+        sourceRepositories = softwareSystem "Source Repositories (git)" "External git hosts holding source-derived artifacts — agent skills and other content that is published as a repository rather than as an image. knock resolves a ref to an immutable commit and fetches that tree; it never writes back." "External"
         destRegistries = softwareSystem "Destination Registries" "The organization's private OCI registries — any dist-spec registry (Harbor, Zot, …); destination for the stamped images, addressed generically via regctl." "External"
         buildkit = softwareSystem "BuildKit" "OCI build engine knock drives to rebuild and harden images." "External"
         packageMirror = softwareSystem "Internal Package Mirror" "The organization's internal apt/apk mirror; the hardening rebuild rewrites the image's package sources to it." "External"
@@ -109,6 +119,7 @@ workspace "knock" "Single front door / stamper for external container images." {
         platformEng -> knock "Configures the hardening policy + registry roster, runs / schedules reconcile" "CLI"
         productTeam -> knock "Declares its imports as MirrorPolicy files" "YAML"
         knock -> sourceRegistries "Lists tags, inspects digests, copies images" "regctl"
+        knock -> sourceRepositories "Resolves a ref to a commit; fetches the tree at that revision" "git"
         knock -> destRegistries "Reads mirror state; copies, stamps, retags, deletes" "regctl (dist-spec)"
         knock -> buildkit "Submits the hardening rebuild (internal CA trust, package mirror)" "buildctl"
         buildkit -> packageMirror "Pulls packages during the hardening rebuild" "apt / apk"
@@ -168,16 +179,39 @@ workspace "knock" "Single front door / stamper for external container images." {
         cliDi -> adReporter "Wires" "DI"
         cliDi -> adClock "Wires" "DI"
         cliDi -> adUsageOracle "Wires" "DI"
+        cliDi -> adGit "Wires" "DI"
+        cliDi -> adArchiver "Wires" "DI"
 
         ucLoader -> domSchema "Parses MirrorPolicy" "Pydantic"
         ucReconcile -> ucReport "Builds the RunReport" "Python"
-        ucReconcile -> domPlanning "Computes the import / update / delete plan" "Python"
-        ucReconcile -> domTransform "Renders & versions transforms" "Python"
-        ucReconcile -> domStamp "Builds provenance annotations" "Python"
-        ucReconcile -> portRegistry "Uses" "Protocol"
-        ucReconcile -> portBuilder "Uses" "Protocol"
+        ucReconcile -> domPlanning "Enforces the ownership invariant, shards, and detects dest-repo + alias collisions across every planner" "Python"
         ucReconcile -> portReporter "Uses" "Protocol"
-        ucReconcile -> ucRegistrySession "Configures TLS/CA + login per registry" "Python"
+
+        # The driver holds planners only through the protocol; the two implementations
+        # are what it constructs. Edge direction follows the dependency, not the call.
+        ucReconcile -> ucPolicyPlanner "Dispatches plan / apply through" "Protocol"
+        ucReconcileRegistry -> ucPolicyPlanner "Implements" "Protocol"
+        ucReconcileGit -> ucPolicyPlanner "Implements" "Protocol"
+
+        ucReconcileRegistry -> domPlanning "Computes the import / update / delete plan" "Python"
+        ucReconcileRegistry -> domTransform "Renders & versions transforms" "Python"
+        ucReconcileRegistry -> domStamp "Builds provenance annotations" "Python"
+        ucReconcileRegistry -> portRegistry "Uses" "Protocol"
+        ucReconcileRegistry -> portBuilder "Uses" "Protocol"
+        ucReconcileRegistry -> portReporter "Uses" "Protocol"
+        ucReconcileRegistry -> ucRegistrySession "Configures TLS/CA + login per registry" "Python"
+
+        ucReconcileGit -> portSource "resolve(): the plan-phase read that keeps --dry-run from cloning" "Protocol"
+        ucReconcileGit -> portRegistry "Lists the destination's tags; reads the alias stamp; copies the alias onto the revision tag" "Protocol"
+        ucReconcileGit -> portReporter "Uses" "Protocol"
+        ucReconcileGit -> ucRegistrySession "Configures TLS/CA + login per registry" "Python"
+        ucReconcileGit -> ucIntake "Places one revision (passes the planned revision as expected_revision)" "Python"
+
+        ucIntake -> portSource "fetch(): materialises the tree at the ref" "Protocol"
+        ucIntake -> portArchiver "Walks the tree and writes the reproducible zip" "Protocol"
+        ucIntake -> domPackaging "Plans the archive; refuses an unsafe or oversized tree" "Python"
+        ucIntake -> domStamp "Builds the base-less source-derived provenance annotations" "Python"
+        ucIntake -> portRegistry "put_artifact: pushes the stamped OCI artifact" "Protocol"
 
         ucPurge -> portRegistry "Lists repos + referrers; hard-deletes purged tags" "Protocol"
         ucPurge -> portUsageOracle "Was this digest seen in prod?" "Protocol"
@@ -198,15 +232,18 @@ workspace "knock" "Single front door / stamper for external container images." {
         adReporter -> portReporter "Implements" "Protocol"
         adClock -> portClock "Implements" "Protocol"
         adUsageOracle -> portUsageOracle "Implements" "Protocol"
+        adGit -> portSource "Implements" "Protocol"
+        adArchiver -> portArchiver "Implements" "Protocol"
 
         adRegctl -> sourceRegistries "Lists tags, inspects digests, copies images" "regctl"
         adRegctl -> destRegistries "Reads mirror state; copies, stamps, retags, deletes" "regctl (dist-spec)"
         adBuildkit -> buildkit "Submits the hardening rebuild (internal CA trust, package mirror)" "buildctl"
         adUsageOracle -> usageOracle "Queries prod usage (KNOCK_USAGE_ORACLE_CMD)" "subprocess (stdin/stdout JSON)"
+        adGit -> sourceRepositories "ls-remote to resolve the ref; depth-1 fetch of the tree" "git"
 
-        ucReconcile -> domAttestation "Builds the transform Statement (rebuild path)" "Python"
-        ucReconcile -> portAttestor "Signs the transform + SBOM predicates (both paths)" "Protocol"
-        ucReconcile -> domSbom "Builds SBOM referrer annotations (both paths)" "Python"
+        ucReconcileRegistry -> domAttestation "Builds the transform Statement (rebuild path)" "Python"
+        ucReconcileRegistry -> portAttestor "Signs the transform + SBOM predicates (both paths)" "Protocol"
+        ucReconcileRegistry -> domSbom "Builds SBOM referrer annotations (both paths)" "Python"
         cliDi -> adCosign "Wires" "DI"
         adCosign -> portAttestor "Implements" "Protocol"
         adCosign -> signingService "Signs attestations (DSSE)" "cosign"
@@ -214,7 +251,7 @@ workspace "knock" "Single front door / stamper for external container images." {
 
         cliDi -> adSyft "Wires" "DI"
         adSyft -> portSbomGenerator "Implements" "Protocol"
-        ucReconcile -> portSbomGenerator "Generates SBOM(s) after placing each image (both paths)" "Protocol"
+        ucReconcileRegistry -> portSbomGenerator "Generates SBOM(s) after placing each image (both paths)" "Protocol"
         adSyft -> destRegistries "Scans the placed image by digest" "syft"
 
         cliScan -> cliDi "Builds the composition root" "Python"
@@ -237,6 +274,7 @@ workspace "knock" "Single front door / stamper for external container images." {
         layUc -> layPorts "Depends on" "Protocol"
         layAdapters -> layPorts "Implement" "Protocol"
         layAdapters -> sourceRegistries "Lists, inspects, copies images" "regctl"
+        layAdapters -> sourceRepositories "Resolves refs; fetches source trees" "git"
         layAdapters -> destRegistries "Copies, stamps, retags, deletes" "regctl"
         layAdapters -> buildkit "Submits the hardening rebuild" "buildctl"
         layAdapters -> usageOracle "Queries prod usage (purge)" "subprocess"

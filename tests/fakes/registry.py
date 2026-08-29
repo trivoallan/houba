@@ -35,6 +35,12 @@ class FakeRegistryPort:
         self._annotations = annotations or {}
         self._fail_get = fail_get or set()
         self._digests = digests or {}
+        self.listed_tags: list[str] = []
+        # Journalled like `listed_tags`, and for the same reason: on the git path this
+        # read is the second half of the convergence decision, and "was it paid at all"
+        # is the assertable claim behind not paying for it when it cannot change the
+        # outcome.
+        self.got_annotations: list[str] = []
         self.copied: list[tuple[str, str]] = []
         self.annotated: list[tuple[str, dict[str, str]]] = []
         self.deleted: list[str] = []
@@ -52,6 +58,9 @@ class FakeRegistryPort:
         return list(self._repositories.get(registry, []))
 
     def list_tags(self, repo_ref: str) -> list[str]:
+        # Journalled like every mutation here: for the git path this read *is* the
+        # convergence decision, so "was it consulted at all" is an assertable claim.
+        self.listed_tags.append(repo_ref)
         return list(self._tags.get(repo_ref, []))
 
     def inspect(self, image_ref: str) -> ImageInfo:
@@ -63,6 +72,7 @@ class FakeRegistryPort:
             raise KeyError(f"FakeRegistryPort: no seeded ImageInfo for {image_ref!r}") from None
 
     def get_annotations(self, image_ref: str) -> tuple[str, dict[str, str]]:
+        self.got_annotations.append(image_ref)
         if image_ref in self._fail_get:
             raise RegctlError(f"fake get_annotations failure for {image_ref}")
         digest = self._digests.get(image_ref) or (

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,6 +13,8 @@ from knock.ports.source import FetchedSource
 # Same budget as the regctl adapter: generous enough for a large clone over a slow link,
 # bounded so a wedged or hostile server cannot pin an intake worker forever.
 _TIMEOUT_SECONDS = 300
+
+_FULL_SHA_RE = re.compile(r"\A[0-9a-f]{40}\Z")
 
 
 class GitAdapter:
@@ -50,6 +53,49 @@ class GitAdapter:
             # ValueError ("embedded null byte") for a NUL anywhere in an argument.
             raise SourceError(f"git {' '.join(args)} could not be executed: {e}") from e
         return done.stdout
+
+    def resolve(self, origin: str, ref: str) -> str:
+        """Resolve `ref` to a commit sha with `ls-remote` — no clone, no working tree.
+
+        `--` before the positionals for the same reason `fetch` has it: git parses
+        options after positionals, so without the separator a `ref` reaching here from
+        policy YAML could smuggle `--upload-pack=<script>`. The schema validators are
+        the other half of that defence; neither alone is enough.
+        """
+        if _FULL_SHA_RE.match(ref):
+            # `ls-remote` lists refs, so it cannot resolve a raw object id.
+            return ref
+        # Passing the peeled name `<ref>^{}` alongside `ref` is deliberate: an exact-name
+        # query for just `ref` does *not* return the peeled line for an annotated tag
+        # (verified against git 2.54.0) — only a glob or an unfiltered listing does, and
+        # a glob risks matching an unintended sibling ref. Querying both names explicitly
+        # is precise and costs nothing extra when `ref` is a branch or lightweight tag,
+        # where the second query simply matches nothing.
+        peeled_name = f"{ref}^{{}}"
+        out = self._run(["ls-remote", "--", origin, ref, peeled_name])
+        candidates: dict[str, str] = {}
+        for line in out.splitlines():
+            sha, _, name = line.partition("\t")
+            if name:
+                candidates[name] = sha
+        # This tuple is an ordered precedence, not a set of equivalent spellings — do
+        # not alphabetise it, dedupe it, or rewrite it as a loop over namespaces.
+        for name in (
+            # `^{}` is the peeled commit of an annotated tag and must win: the tag
+            # object's own sha is not the revision of the packaged software.
+            f"refs/tags/{peeled_name}",
+            # Tags before heads, matching git's own ref disambiguation (gitrevisions(7)):
+            # a repository carrying one name as both a branch and a tag resolves to the
+            # tag, and `fetch` resolves it the same way, so the port's "resolve and fetch
+            # must agree" contract still holds. Flipping these two silently stamps a
+            # different commit in `org.opencontainers.image.revision`.
+            f"refs/tags/{ref}",
+            f"refs/heads/{ref}",
+            ref,
+        ):
+            if name in candidates:
+                return candidates[name]
+        raise SourceError(f"ref '{ref}' not found in {origin}")
 
     def fetch(
         self, origin: str, ref: str, workdir: Path, *, path: str | None = None
