@@ -337,3 +337,22 @@ def test_limit_short_circuits_before_second_registry() -> None:
     configured_hosts_full = [host for host, _tls, _ca in reg_full.configured]
     assert _HOST1 in configured_hosts_full
     assert _HOST2 in configured_hosts_full, "without a limit, the second host IS logged in"
+
+
+def test_audit_of_a_path_prefixed_registry_walks_only_its_namespace() -> None:
+    reg = FakeRegistryPort(
+        repositories={"ghcr.io": ["acme/redis", "other/redis"]},
+        tags={"ghcr.io/acme/redis": ["7.2.0"], "ghcr.io/other/redis": ["7.2.0"]},
+        annotations={
+            "ghcr.io/acme/redis:7.2.0": {"io.knock.policy": "redis"},
+            "ghcr.io/other/redis:7.2.0": {"io.knock.policy": "not-ours"},
+        },
+    )
+    report = audit_coverage(
+        registry=reg,
+        roster={"ghcr": RegistryConfig(host="ghcr.io/acme")},
+        only_registry=None,
+        label_prefix="io.knock",
+    )
+    assert [o.image_ref for o in report.outcomes] == ["ghcr.io/acme/redis:7.2.0"]
+    assert report.counts.scanned == 1

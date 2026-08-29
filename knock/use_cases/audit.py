@@ -18,7 +18,7 @@ from knock.domain.sbom import FORMAT_MEDIA_TYPES
 from knock.errors import KnockError, exit_code_for
 from knock.ports.registry import RegistryPort
 from knock.ports.reporter import ErrorInfo
-from knock.use_cases.registry_session import ensure_registry_session
+from knock.use_cases.registry_session import ensure_registry_session, walk_repo_refs
 
 
 class CoverageOutcome(BaseModel):
@@ -122,8 +122,7 @@ def audit_coverage(
     def _image_refs() -> Iterator[str]:
         for _name, cfg in targets:
             ensure_registry_session(registry, cfg, logged_in)
-            for repo in registry.list_repositories(cfg.host):
-                repo_ref = f"{cfg.host}/{repo}"
+            for repo_ref in walk_repo_refs(registry, cfg):
                 for tag in registry.list_tags(repo_ref):
                     yield f"{repo_ref}:{tag}"
 

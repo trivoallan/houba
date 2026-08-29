@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from knock.domain.deletion_mode import DeletionMode
@@ -26,7 +26,11 @@ class RegistryConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     host: str = Field(
-        description="Registry host, e.g. `harbor.example.com` or `localhost:5001`.",
+        min_length=1,
+        description="Registry host, optionally with a path-prefix namespace — "
+        "`harbor.example.com`, `localhost:5001`, or `ghcr.io/acme`. Image references "
+        "compose from the whole value; regctl's registry-level operations (login, TLS "
+        "configuration, catalog walk) use only the host part. No scheme, no trailing slash.",
     )
     username: str | None = Field(
         default=None,
@@ -53,11 +57,51 @@ class RegistryConfig(BaseModel):
         "(policy ← destination ← global).",
     )
 
+    # `min_length=1` on the field is as far as the declarative contract goes here. The rest
+    # stays imperative on purpose: one pattern would have to accept `localhost:5000`,
+    # `harbor.corp:443`, an IPv6 literal (`[::1]:5000`) and multi-segment prefixes alike, and
+    # such a regex fails on the case nobody thought of. The published JSON schema therefore
+    # carries these rules as prose only — a decision, not an oversight.
+    @field_validator("host")
+    @classmethod
+    def _host_has_no_scheme_or_slashes(cls, v: str) -> str:
+        if "://" in v:
+            raise ValueError("registry host must not carry a scheme (got a URL)")
+        if v.endswith("/"):
+            raise ValueError("registry host must not end with '/'")
+        if v.startswith("/"):
+            raise ValueError("registry host must not start with '/'")
+        if not v.strip():
+            raise ValueError("registry host must not be empty")
+        if any(c.isspace() for c in v):
+            raise ValueError("registry host must not contain whitespace")
+        if any(not segment for segment in v.split("/")):
+            raise ValueError("registry host must not contain an empty path segment")
+        return v
+
     @model_validator(mode="after")
     def _credentials_both_or_neither(self) -> RegistryConfig:
         if (self.username is None) != (self.password is None):
             raise ValueError("registry username and password must be set together")
         return self
+
+    @property
+    def registry_host(self) -> str:
+        """The bare registry host, without the path-prefix namespace.
+
+        `host` may carry a prefix (`ghcr.io/acme`) because GHCR, GitLab and Artifactory
+        namespace by path. Image refs compose from the full `host`; regctl's registry-level
+        operations (`registry set` / `registry login` / `repo ls`) take the bare host only.
+
+        (Sibling of the module-level `registry_host` helper imported from
+        `knock.domain.scan.refs`, which extracts the same component from an image ref.)
+        """
+        return self.host.split("/", 1)[0]
+
+    @property
+    def path_prefix(self) -> str:
+        """The namespace part of `host`: `acme` for `ghcr.io/acme`, `""` for `harbor.corp`."""
+        return self.host.partition("/")[2]
 
 
 class CACertSource(BaseModel):
@@ -345,14 +389,21 @@ def match_registry_by_host(
 
     Returns the (name, config) pair, or None when the ref carries no host-like
     segment or no roster entry matches — the signal to fall back to ambient
-    registry config. Never raises (unlike resolve_registry): a non-match is a
-    valid, expected outcome for attach.
+    registry config. An entry carrying a path prefix (`ghcr.io/acme`) matches only
+    refs inside that namespace, and the most specific entry wins: a namespaced entry
+    is preferred over a bare one serving the same registry. Never raises (unlike
+    resolve_registry): a non-match is a valid, expected outcome for attach.
     """
     host = registry_host(ref)
     if host is None:
         return None
-    for name, cfg in roster.items():
-        if cfg.host == host:
+    # Most specific first: a path-prefixed entry (`ghcr.io/acme`) must win over a bare
+    # one (`ghcr.io`) serving the same registry, or the namespaced entry's credentials
+    # are silently skipped and the caller falls back to ambient config.
+    for name, cfg in sorted(roster.items(), key=lambda kv: -len(kv[1].host)):
+        if cfg.registry_host != host:
+            continue
+        if not cfg.path_prefix or ref.startswith(f"{cfg.host}/"):
             return name, cfg
     return None
 

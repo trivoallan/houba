@@ -114,7 +114,8 @@
       "description": "One real registry behind a logical destination name (host + credentials).",
       "properties": {
         "host": {
-          "description": "Registry host, e.g. `harbor.example.com` or `localhost:5001`.",
+          "description": "Registry host, optionally with a path-prefix namespace \u2014 `harbor.example.com`, `localhost:5001`, or `ghcr.io/acme`. Image references compose from the whole value; regctl's registry-level operations (login, TLS configuration, catalog walk) use only the host part. No scheme, no trailing slash.",
+          "minLength": 1,
           "title": "Host",
           "type": "string"
         },

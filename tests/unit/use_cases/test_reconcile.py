@@ -179,6 +179,50 @@ def test_reconcile_copies_new_tags_and_stamps() -> None:
     assert report.totals.imported == 2
 
 
+def test_namespaced_destination_carries_the_prefix_once_over_a_bare_host_session() -> None:
+    # A path-prefixed roster host (`ghcr.io/acme`) splits in two: image references compose
+    # from the FULL host, while regctl's registry-level commands (TLS config, login) take
+    # only the bare host. Reconcile is the WRITE side of that invariant and composes its
+    # destination itself, independently of the read-side catalog walk. Swapping `cfg.host`
+    # for `cfg.registry_host` in that composition would publish to `ghcr.io/demo/redis` —
+    # outside the namespace GHCR requires — so pin both halves here.
+    policy = parse_mirror_policy("""
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata: { name: redis-namespaced }
+spec:
+  artifactType: image
+  source: { registry: docker.io, repository: library/redis }
+  imports:
+    - name: v7
+      tags: { includeRegex: "^7\\\\.2\\\\.0$" }
+      destinations: [{ registry: ghcr, project: demo, repository: redis }]
+""")
+    fake = FakeRegistryPort(
+        tags={"docker.io/library/redis": ["7.2.0"], "ghcr.io/acme/demo/redis": []},
+        infos={"docker.io/library/redis:7.2.0": _info("sha256:a")},
+    )
+    reconcile_policies(
+        [policy],
+        registry=fake,
+        builder=FakeImageBuilder(),
+        roster={"ghcr": RegistryConfig(host="ghcr.io/acme", username="u", password="p")},
+        ca_certs={},
+        package_mirrors={},
+        build_platform="linux/amd64",
+        now=NOW,
+        label_prefix="io.knock",
+        dry_run_tags=False,
+        dry_run_deletions=False,
+        reporter=FakeReporter(),
+    )
+    # The namespace appears exactly once in the destination — never doubled, never dropped.
+    assert fake.copied == [("docker.io/library/redis@sha256:a", "ghcr.io/acme/demo/redis:7.2.0")]
+    # …and the session behind it was established against the bare host.
+    assert fake.configured == [("ghcr.io", True, None)]
+    assert fake.logins == [("ghcr.io", "u", True)]
+
+
 def test_copy_path_pins_the_source_digest_it_stamps() -> None:
     # TOCTOU: copying by tag lets upstream retag between the plan and the apply, so knock
     # places bytes A while stamping base.digest = B — the stamp then describes a different
