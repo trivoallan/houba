@@ -69,7 +69,10 @@ def test_attach_runs_and_reports(
     result = runner.invoke(app, ["attach", "harbor.corp/lib/redis:7.2.0", "--report", str(report)])
     assert result.exit_code == 0, result.stdout
     assert "attached sarif scan" in result.stdout
-    assert "sha256:ref123" in result.stdout
+    # The rendered referrer digest must be a real manifest digest, not the bare
+    # reference the fake regctl used to echo back for every `artifact put` call.
+    digest = "sha256:a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4"
+    assert digest in result.stdout
 
 
 def test_attach_json_output_is_parseable(

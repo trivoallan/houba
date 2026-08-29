@@ -108,9 +108,24 @@ case "$cmd" in
         esac
         ;;
     "artifact put")
-        # Serves put_referrer: annotation-only (no blob; stdout ignored) and
-        # blob-carrying (returns the referrer digest).
-        printf 'harbor.corp/lib/redis@sha256:ref123\n'
+        # Real regctl prints nothing on stdout for `artifact put` when pushing by tag
+        # or by subject — a digest only comes back with --by-digest or an explicit
+        # --format (put_referrer always passes --format). Model that faithfully: no
+        # --format in argv => no output, matching production regctl exactly.
+        case "$scenario" in
+            put-blank)
+                # Simulates regctl going silent even though --format was requested
+                # (tool bug / version drift) — put_referrer must not trust a blank
+                # result just because the flag was there.
+                : ;;
+            *)
+                case "$*" in
+                    *--format*)
+                        printf 'sha256:a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4\n' ;;
+                    *) : ;;
+                esac
+                ;;
+        esac
         ;;
     *)
         echo "fake-regctl: unknown command '$cmd'" >&2

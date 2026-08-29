@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from knock.adapters.regctl_cli import RegctlAdapter
-from knock.errors import RegctlError
+from knock.errors import RegctlError, exit_code_for
 
 
 def test_list_tags(fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -251,7 +251,7 @@ def test_put_referrer_invokes_artifact_put_with_subject(
     fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     log = _log(tmp_path, monkeypatch)
-    RegctlAdapter().put_referrer(
+    digest = RegctlAdapter().put_referrer(
         "harbor.corp/lib/redis:6.0.0",
         "application/vnd.knock.lifecycle.pending+json",
         {"io.knock.lifecycle.state": "pending-deletion"},
@@ -261,6 +261,11 @@ def test_put_referrer_invokes_artifact_put_with_subject(
     assert "--subject harbor.corp/lib/redis:6.0.0" in line
     assert "--artifact-type application/vnd.knock.lifecycle.pending+json" in line
     assert "--annotation io.knock.lifecycle.state=pending-deletion" in line
+    # `artifact put` prints nothing on stdout for a plain (annotation-only) push unless
+    # --format is requested — the annotation-only path needs it exactly as much as the
+    # blob-carrying one, or its return value is a lie (see the blob-path test below).
+    assert "--format {{ .Manifest.GetDescriptor.Digest }}" in line
+    assert digest == "sha256:a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4"
 
 
 def test_delete_referrer_invokes_manifest_delete(
@@ -323,7 +328,10 @@ def test_put_referrer_with_blob_invokes_artifact_put_with_flags(
     assert "--annotation io.knock.scan.tool=trivy" in line
     assert "--annotation io.knock.scan.vuln.critical=0" in line
     assert line.split().count("harbor.corp/lib/redis@sha256:abc") == 1
-    assert digest == "harbor.corp/lib/redis@sha256:ref123"
+    assert "--format {{ .Manifest.GetDescriptor.Digest }}" in line
+    # regctl prints nothing on `artifact put` by tag/subject; put_referrer must return
+    # a real manifest digest (not the reference the pre-fix fake bin used to echo back).
+    assert digest == "sha256:a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4"
 
 
 def test_put_referrer_failure_raises_regctl_error(
@@ -332,6 +340,41 @@ def test_put_referrer_failure_raises_regctl_error(
     monkeypatch.setenv("FAKE_REGCTL_SCENARIO", "fail")
     with pytest.raises(RegctlError):
         RegctlAdapter().put_referrer("r:1", "application/vnd.knock.x", {})
+
+
+def test_put_referrer_blank_output_raises_instead_of_returning_it(
+    fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression for the shipped defect: `regctl artifact put` prints nothing on
+    # stdout when pushing by tag/subject (its real, documented behavior), and
+    # put_referrer used to hand that blank output back as if it were a digest.
+    # That "" then flowed into a signed attestation as `report_digest: ""` — a
+    # signed, authoritative-looking claim that the scan report's digest is empty.
+    # Blank (or otherwise non-digest) output must raise, never be trusted.
+    monkeypatch.setenv("FAKE_REGCTL_SCENARIO", "put-blank")
+    with pytest.raises(RegctlError) as exc_info:
+        RegctlAdapter().put_referrer(
+            "harbor.corp/lib/redis:6.0.0", "application/vnd.knock.lifecycle.pending+json", {}
+        )
+    # A registry adapter lying about its output is infrastructure misbehavior, not a
+    # domain error or an internal bug — exit_code_for must route it to exit 2.
+    assert exit_code_for(exc_info.value) == 2
+
+
+def test_put_referrer_with_blob_blank_output_raises_instead_of_returning_it(
+    fake_bin_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Same regression, blob-carrying path (the second of the two invocation shapes
+    # put_referrer has — both must validate before returning).
+    monkeypatch.setenv("FAKE_REGCTL_SCENARIO", "put-blank")
+    with pytest.raises(RegctlError):
+        RegctlAdapter().put_referrer(
+            "harbor.corp/lib/redis@sha256:abc",
+            "application/vnd.knock.scan.result.v1",
+            {},
+            blob=b"{}",
+            media_type="application/sarif+json",
+        )
 
 
 def test_delete_referrer_failure_raises_regctl_error(
