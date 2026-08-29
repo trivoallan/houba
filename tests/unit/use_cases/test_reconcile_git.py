@@ -24,9 +24,11 @@ from tests.fakes.reporter import FakeReporter
 from tests.fakes.source import FakeSourcePort
 
 _REV = "a" * 40
+_REV_B = "b" * 40  # the revision a moving ref advanced to, and was then reverted from
 _URL = "https://github.com/example/agent-skill.git"
 _REF = "v1.2.0"
 _NOW = datetime(2026, 8, 29, tzinfo=UTC)
+_REVISION_KEY = "org.opencontainers.image.revision"
 
 _SKILL = f"""
 apiVersion: knock.io/v1alpha1
@@ -170,13 +172,24 @@ def test_apply_imports_and_aliases_a_new_revision(policy: MirrorPolicy, tmp_path
     assert [ev.kind for ev in reporter.operations] == ["imported", "aliased"]
 
 
+def _converged(revision: str = _REV) -> FakeRegistryPort:
+    """A destination already reconciled onto `revision`: the immutable revision tag is
+    placed AND the moving alias designates it — which is the whole convergence
+    condition, not just its first half."""
+    return FakeRegistryPort(
+        tags={_DEST: [f"{REVISION_TAG_PREFIX}{revision}", _REF]},
+        annotations={f"{_DEST}:{_REF}": {_REVISION_KEY: revision}},
+    )
+
+
 def test_apply_skips_an_already_placed_revision_without_fetching(
     policy: MirrorPolicy, tmp_path: Path
 ) -> None:
     # The convergence claim, asserted where it matters: a scheduled run over an
-    # unchanged upstream must transfer nothing at all.
+    # unchanged upstream must transfer nothing at all — no fetch, and no push, not
+    # even a re-point of an alias that is already correct.
     source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
-    registry = FakeRegistryPort(tags={_DEST: [f"{REVISION_TAG_PREFIX}{_REV}"]})
+    registry = _converged()
     planner = _planner(source, registry, work_dir=tmp_path)
     planner.plan([policy])
     reports = planner.apply(reporter=FakeReporter(), executor=None)
@@ -187,6 +200,92 @@ def test_apply_skips_an_already_placed_revision_without_fetching(
     assert registry.copied == []
     assert reports[0].totals.skipped == 1
     assert reports[0].totals.imported == 0
+
+
+def test_a_reverted_ref_repoints_its_alias_without_refetching(
+    policy: MirrorPolicy, tmp_path: Path
+) -> None:
+    # The three-step scenario: `v1.2.0` was at A, advanced to B, and has now been
+    # reverted to A. `sha-A` is still in the destination, so "the revision is placed"
+    # answers yes — while the alias still designates B. Whoever installs by ref name
+    # gets B while the policy says A, and nothing reports the discrepancy.
+    #
+    # `sha-B` is still present too: revision tags are immutable and knock never
+    # removes them, which is exactly why the first half of the condition is not enough.
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
+    registry = FakeRegistryPort(
+        tags={_DEST: [f"{REVISION_TAG_PREFIX}{_REV}", f"{REVISION_TAG_PREFIX}{_REV_B}", _REF]},
+        annotations={f"{_DEST}:{_REF}": {_REVISION_KEY: _REV_B}},
+    )
+    planner = _planner(source, registry, work_dir=tmp_path)
+    planner.plan([policy])
+    reports = planner.apply(reporter=FakeReporter(), executor=None)
+
+    # The alias follows the ref backwards, onto the revision tag already in place…
+    assert registry.copied == [(f"{_DEST}:{REVISION_TAG_PREFIX}{_REV}", f"{_DEST}:{_REF}")]
+    # …and the artifact, which is already there, is neither re-fetched nor re-pushed.
+    assert source.fetched == []
+    assert registry.artifacts == []
+    assert _kinds(reports) == ["aliased"]
+    assert (reports[0].totals.aliased, reports[0].totals.imported) == (1, 0)
+    assert reports[0].totals.skipped == 0
+    assert reports[0].status == "ok"
+
+
+def test_a_missing_alias_is_repointed_from_the_free_tag_list(
+    policy: MirrorPolicy, tmp_path: Path
+) -> None:
+    # An interrupted run can leave the revision tag placed and the alias never created.
+    # No second read decides this one: the alias's absence from `list_tags` — a read
+    # already paid for — is the whole answer.
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
+    registry = FakeRegistryPort(tags={_DEST: [f"{REVISION_TAG_PREFIX}{_REV}"]})
+    planner = _planner(source, registry, work_dir=tmp_path)
+    planner.plan([policy])
+    reports = planner.apply(reporter=FakeReporter(), executor=None)
+
+    assert registry.got_annotations == []
+    assert _kinds(reports) == ["aliased"]
+    assert source.fetched == []
+    assert registry.artifacts == []
+    assert registry.copied == [(f"{_DEST}:{REVISION_TAG_PREFIX}{_REV}", f"{_DEST}:{_REF}")]
+
+
+def test_plan_reads_the_alias_only_when_the_revision_is_already_placed(
+    policy: MirrorPolicy,
+) -> None:
+    # The extra read is paid only where it can change the outcome. With nothing placed,
+    # the artifact is pushed and the alias moved regardless of what the alias says
+    # today, so asking is spend for an answer nobody consults.
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
+    registry = FakeRegistryPort(tags={_DEST: []})
+    _planner(source, registry).plan([policy])
+    assert registry.got_annotations == []
+
+    converged = _converged()
+    _planner(source, converged).plan([policy])
+    assert converged.got_annotations == [f"{_DEST}:{_REF}"]
+
+
+def test_dry_run_reports_a_stale_alias_without_repointing_it(
+    policy: MirrorPolicy, tmp_path: Path
+) -> None:
+    # The repoint is a mutation like any other, so `--dry-run` must plan it, not do it —
+    # and must not claim an import of an artifact that is already placed.
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV}, tree=_TREE)
+    registry = FakeRegistryPort(
+        tags={_DEST: [f"{REVISION_TAG_PREFIX}{_REV}", _REF]},
+        annotations={f"{_DEST}:{_REF}": {_REVISION_KEY: _REV_B}},
+    )
+    planner = _planner(source, registry, dry_run_tags=True, work_dir=tmp_path)
+    planner.plan([policy])
+    reports = planner.apply(reporter=FakeReporter(), executor=None)
+
+    assert _kinds(reports) == ["aliased"]
+    assert [op.applied for op in _operations(reports)] == [False]
+    assert source.fetched == []
+    assert registry.artifacts == []
+    assert registry.copied == []
 
 
 def test_dry_run_neither_fetches_nor_pushes(policy: MirrorPolicy, tmp_path: Path) -> None:
