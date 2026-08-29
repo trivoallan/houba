@@ -166,3 +166,31 @@ def test_report_exit_code_walks_target_level_operation_errors() -> None:
     )
     report = RunReport(mode="apply", status="partial", totals=Counts(failed=1), policies=[policy])
     assert report_exit_code(report) == 2
+
+
+def test_json_report_counts_failed_policies() -> None:
+    # The text renderer computed `failed_policies` itself, so the JSON envelope — the
+    # documented machine contract — reported `totals.failed == 0` alongside
+    # `status == "failed"`. A CI consumer could not count the policies that failed;
+    # the human reading the same run could.
+    failed = PolicyReport(
+        name="a",
+        source="s",
+        status="failed",
+        error=ErrorInfo(type="UnsupportedSourceError", message="boom", exit_code=1),
+        totals=Counts(),
+        targets=[],
+    )
+    ok = PolicyReport(name="b", source="s", status="ok", totals=Counts(), targets=[])
+    report = RunReport(mode="apply", status="failed", totals=Counts(), policies=[failed, ok])
+
+    assert report.failed_policies == 1
+    assert json.loads(report.model_dump_json())["failed_policies"] == 1
+
+
+def test_failed_policies_is_derived_not_settable() -> None:
+    # Derived from `policies`, so it cannot drift from them — the reason it lives on
+    # the model rather than being recomputed by each renderer.
+    report = RunReport(mode="apply", status="ok", totals=Counts(), policies=[])
+    assert report.failed_policies == 0
+    assert "failed_policies" in run_report_json_schema()["properties"]
