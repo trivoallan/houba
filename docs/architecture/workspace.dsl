@@ -309,6 +309,8 @@ workspace "knock" "Single front door / stamper for external container images." {
             rfScanAttach -> rfDest "Fetches the SBOM referrer; attaches grype's SARIF" "regctl" "DataCoupling"
             rfBlast -> rfPausePods "Lists pods, joins digest -> cluster (kube API)" "kubectl / kube API"
             rfGc -> rfDest "Collects superseded scan referrers" "regctl" "DataCoupling"
+            rfPublishSbom -> rfDest "Fetches the CycloneDX SBOM referrer" "regctl" "DataCoupling"
+            rfPublishSbom -> rfDt "Uploads the SBOM" "Dependency-Track API" "DataCoupling"
         }
 
         # ── Brownfield — drop-in to an existing intake (make demo-mongobleed / make local).
@@ -349,6 +351,10 @@ workspace "knock" "Single front door / stamper for external container images." {
             loBlast -> loDest "Reads provenance stamps" "regctl" "DataCoupling"
             loBlast -> loPausePods "Lists pods, joins digest -> cluster (kube API)" "kubectl / kube API"
             loGc -> loDest "Collects superseded scan referrers" "regctl" "DataCoupling"
+            loScanAttach -> loDest "Fetches the SBOM referrer; attaches grype's SARIF" "regctl" "DataCoupling"
+            loPublishSbom -> loDest "Fetches the CycloneDX SBOM referrer" "regctl" "DataCoupling"
+            loPublishSbom -> loDt "Uploads the SBOM" "Dependency-Track API" "DataCoupling"
+            loKnock -> loSecret "Reads the registry roster" "env (secretRef)" "DataCoupling"
         }
     }
 
