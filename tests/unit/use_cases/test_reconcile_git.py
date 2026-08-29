@@ -18,6 +18,7 @@ from knock.domain.mirror_policy import MirrorPolicy, parse_mirror_policy
 from knock.errors import InternalError, SourceError
 from knock.use_cases.policy_planner import PolicyPlanner
 from knock.use_cases.reconcile_git import REVISION_TAG_PREFIX, GitPlanner
+from knock.use_cases.report import Operation, PolicyReport
 from tests.fakes.registry import FakeRegistryPort
 from tests.fakes.reporter import FakeReporter
 from tests.fakes.source import FakeSourcePort
@@ -135,3 +136,91 @@ def test_apply_before_plan_is_loud() -> None:
     planner = _planner(FakeSourcePort(), FakeRegistryPort())
     with pytest.raises(InternalError):
         planner.apply(reporter=FakeReporter(), executor=None)
+
+
+def _kinds(reports: list[PolicyReport]) -> list[str]:
+    return [op.kind for r in reports for t in r.targets for v in t.variants for op in v.operations]
+
+
+def _operations(reports: list[PolicyReport]) -> list[Operation]:
+    return [op for r in reports for t in r.targets for v in t.variants for op in v.operations]
+
+
+def test_apply_imports_and_aliases_a_new_revision(policy: MirrorPolicy, tmp_path: Path) -> None:
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    registry = FakeRegistryPort(tags={_DEST: []})
+    reporter = FakeReporter()
+    planner = _planner(source, registry, work_dir=tmp_path)
+    planner.plan([policy])
+    reports = planner.apply(reporter=reporter, executor=None)
+
+    assert _kinds(reports) == ["imported", "aliased"]
+    assert [op.applied for op in _operations(reports)] == [True, True]
+    assert source.fetched == [(_URL, _REF)]  # exactly one fetch, for the one destination
+    assert [ref for ref, *_ in registry.artifacts] == [f"{_DEST}:{REVISION_TAG_PREFIX}{_REV}"]
+    # The ref name is a moving alias onto the immutable revision tag, never a second push.
+    assert registry.copied == [(f"{_DEST}:{REVISION_TAG_PREFIX}{_REV}", f"{_DEST}:{_REF}")]
+    assert reports[0].status == "ok"
+    assert (reports[0].totals.imported, reports[0].totals.aliased) == (1, 1)
+    assert [ev.kind for ev in reporter.operations] == ["imported", "aliased"]
+
+
+def test_apply_skips_an_already_placed_revision_without_fetching(
+    policy: MirrorPolicy, tmp_path: Path
+) -> None:
+    # The convergence claim, asserted where it matters: a scheduled run over an
+    # unchanged upstream must transfer nothing at all.
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    registry = FakeRegistryPort(tags={_DEST: [f"{REVISION_TAG_PREFIX}{_REV}"]})
+    planner = _planner(source, registry, work_dir=tmp_path)
+    planner.plan([policy])
+    reports = planner.apply(reporter=FakeReporter(), executor=None)
+
+    assert _kinds(reports) == ["skipped"]
+    assert source.fetched == []
+    assert registry.artifacts == []
+    assert registry.copied == []
+    assert reports[0].totals.skipped == 1
+    assert reports[0].totals.imported == 0
+
+
+def test_dry_run_neither_fetches_nor_pushes(policy: MirrorPolicy, tmp_path: Path) -> None:
+    # Decision 3's whole purpose: the plan is shown without materialising a tree.
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    registry = FakeRegistryPort(tags={_DEST: []})
+    planner = _planner(source, registry, dry_run_tags=True, work_dir=tmp_path)
+    planner.plan([policy])
+    reports = planner.apply(reporter=FakeReporter(), executor=None)
+
+    assert _kinds(reports) == ["imported", "aliased"]
+    assert [op.applied for op in _operations(reports)] == [False, False]
+    assert source.fetched == []
+    assert registry.artifacts == []
+    assert registry.copied == []
+
+
+def test_one_failing_policy_does_not_abort_the_batch(policy: MirrorPolicy, tmp_path: Path) -> None:
+    # The image path's invariant, kept: a destination that refuses the push fails its
+    # own policy and nothing else in the worklist.
+    broken = parse_mirror_policy(
+        _SKILL.replace("name: example-skill", "name: broken").replace(
+            "repository: example-skill", "repository: broken-skill"
+        )
+    )
+    broken_dest = "registry.example/skills/broken-skill"
+    source = FakeSourcePort(revisions={(_URL, _REF): _REV})
+    registry = FakeRegistryPort(
+        tags={_DEST: [], broken_dest: []},
+        fail_put={f"{broken_dest}:{REVISION_TAG_PREFIX}{_REV}"},
+    )
+    reporter = FakeReporter()
+    planner = _planner(source, registry, work_dir=tmp_path)
+    planner.plan([broken, policy])
+    reports = planner.apply(reporter=reporter, executor=None)
+
+    by_name = {r.name: r for r in reports}
+    assert by_name["broken"].status == "failed"
+    assert by_name["broken"].error is not None
+    assert by_name["example-skill"].status == "ok"
+    assert [ref for ref, *_ in registry.artifacts] == [f"{_DEST}:{REVISION_TAG_PREFIX}{_REV}"]
+    assert [name for name, _ in reporter.failures] == ["broken"]

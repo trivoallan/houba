@@ -8,6 +8,8 @@ second port call is needed.
 
 from __future__ import annotations
 
+import tempfile
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -17,12 +19,22 @@ from knock.config import RegistryConfig, resolve_registry
 from knock.domain.collision import AliasTarget
 from knock.domain.mirror_policy import GitSource, MirrorPolicy
 from knock.domain.policy_merge import resolve_imports
-from knock.errors import InternalError
+from knock.errors import InternalError, exit_code_for
 from knock.ports.archiver import ArchiverPort
 from knock.ports.registry import RegistryPort
-from knock.ports.reporter import Reporter
+from knock.ports.reporter import Counts, ErrorInfo, OperationEvent, Reporter
 from knock.ports.source import SourcePort
-from knock.use_cases.report import PolicyReport
+from knock.use_cases.intake import _IMPLICIT_VARIANT, IntakeRequest, intake_skill
+from knock.use_cases.registry_session import ensure_registry_session
+from knock.use_cases.report import (
+    Operation,
+    PolicyReport,
+    TargetReport,
+    VariantReport,
+    counts_of,
+    merge_counts,
+    node_status,
+)
 
 REVISION_TAG_PREFIX = "sha-"
 
@@ -131,4 +143,169 @@ class GitPlanner:
             # A driver that applies a batch it never planned would report a clean
             # empty run — silently placing nothing. Loud instead.
             raise InternalError("GitPlanner.apply called before plan")
-        raise NotImplementedError
+        by_policy: dict[str, list[_GitPlan]] = defaultdict(list)
+        for plan in self._plans:
+            by_policy[plan.policy.metadata.name].append(plan)
+
+        reports: list[PolicyReport] = []
+        for plans in by_policy.values():
+            policy_name = plans[0].policy.metadata.name
+            source_ref = plans[0].source.url
+            reporter.policy_started(policy_name, source_ref)
+            try:
+                targets = [self._apply_one(p, reporter=reporter) for p in plans]
+                all_ops = [op for t in targets for v in t.variants for op in v.operations]
+                totals = merge_counts([t.totals for t in targets])
+                reporter.policy_completed(policy_name, totals)
+                reports.append(
+                    PolicyReport(
+                        name=policy_name,
+                        source=source_ref,
+                        status=node_status(all_ops),
+                        error=None,
+                        totals=totals,
+                        targets=targets,
+                    )
+                )
+            except Exception as exc:
+                # Isolation, as on the image path: one destination refusing a push
+                # fails its own policy and leaves the rest of the batch reconciled.
+                info = ErrorInfo(
+                    type=type(exc).__name__, message=str(exc), exit_code=exit_code_for(exc)
+                )
+                reporter.policy_failed(policy_name, info)
+                reports.append(
+                    PolicyReport(
+                        name=policy_name,
+                        source=source_ref,
+                        status="failed",
+                        error=info,
+                        totals=Counts(),
+                        targets=[],
+                    )
+                )
+        return reports
+
+    def _apply_one(self, plan: _GitPlan, *, reporter: Reporter) -> TargetReport:
+        if plan.already_placed:
+            # Nothing to transfer: the revision tag is immutable, so its presence is
+            # the whole convergence answer. No fetch, no push.
+            skipped = Operation(
+                kind="skipped",
+                out_tag=plan.revision_tag,
+                src_tag=plan.ref,
+                digest=plan.revision,
+                applied=True,
+            )
+            self._emit(plan, skipped, reporter=reporter)
+            return _target_report(plan, [skipped])
+
+        if self.dry_run_tags:
+            # No fetch and no push — the property `SourcePort.resolve` exists for.
+            return _target_report(
+                plan,
+                [
+                    Operation(
+                        kind="imported",
+                        out_tag=plan.revision_tag,
+                        src_tag=plan.ref,
+                        digest=plan.revision,
+                        applied=False,
+                    ),
+                    Operation(
+                        kind="aliased",
+                        out_tag=plan.ref,
+                        src_tag=plan.revision_tag,
+                        digest=plan.revision,
+                        applied=False,
+                    ),
+                ],
+            )
+
+        ensure_registry_session(self.registry, plan.config, self.logged_in)
+        if self.work_dir is not None:
+            self.work_dir.mkdir(parents=True, exist_ok=True)
+        revision_ref = f"{plan.dest_repo}:{plan.revision_tag}"
+        with tempfile.TemporaryDirectory(prefix="knock-intake-", dir=self.work_dir) as tmp:
+            result = intake_skill(
+                IntakeRequest(
+                    origin=plan.source.url,
+                    ref=plan.ref,
+                    path=plan.source.path,
+                    destination_ref=revision_ref,
+                    title=plan.policy.metadata.name,
+                    policy=plan.policy.metadata.name,
+                    import_name=plan.import_name,
+                    owners=plan.owners,
+                    vendor=plan.vendor,
+                    # A subdirectory of the temp dir, never the temp dir itself:
+                    # `GitAdapter._claim_workdir` refuses a workdir it did not create.
+                    workdir=Path(tmp) / "src",
+                ),
+                source=self.source,
+                registry=self.registry,
+                archiver=self.archiver,
+                prefix=self.label_prefix,
+                now=self.now,
+            )
+        # The alias moves after the revision tag exists, so a reader following the ref
+        # name never resolves to a tag that is not there yet.
+        self.registry.copy(revision_ref, f"{plan.dest_repo}:{plan.ref}")
+        operations = [
+            Operation(
+                kind="imported",
+                out_tag=plan.revision_tag,
+                src_tag=plan.ref,
+                digest=result.revision,
+                applied=True,
+                out_digest=result.manifest_digest,
+            ),
+            Operation(
+                kind="aliased",
+                out_tag=plan.ref,
+                src_tag=plan.revision_tag,
+                digest=result.revision,
+                applied=True,
+                out_digest=result.manifest_digest,
+            ),
+        ]
+        for op in operations:
+            self._emit(plan, op, reporter=reporter)
+        return _target_report(plan, operations)
+
+    def _emit(self, plan: _GitPlan, op: Operation, *, reporter: Reporter) -> None:
+        reporter.operation_applied(
+            OperationEvent(
+                policy=plan.policy.metadata.name,
+                dest_repo=plan.dest_repo,
+                variant=_IMPLICIT_VARIANT,
+                kind=op.kind,
+                out_tag=op.out_tag,
+                src_tag=op.src_tag,
+                digest=op.digest,
+                applied=op.applied,
+                out_digest=op.out_digest,
+            )
+        )
+
+
+def _target_report(plan: _GitPlan, operations: list[Operation]) -> TargetReport:
+    """One destination, one variant. A skill declares no transform, so there is nothing
+    to fan out — the single implicit variant is spelled as `intake` spells it."""
+    totals = counts_of(operations)
+    status = node_status(operations)
+    return TargetReport(
+        dest_repo=plan.dest_repo,
+        status=status,
+        variants=[
+            VariantReport(
+                name=_IMPLICIT_VARIANT,
+                suffix="",
+                status=status,
+                totals=totals,
+                operations=operations,
+            )
+        ],
+        operations=[],
+        totals=totals,
+    )
