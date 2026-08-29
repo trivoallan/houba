@@ -30,11 +30,30 @@ class ArtifactType(StrEnum):
     image = "image"
     helm_chart = "helmChart"
     generic = "generic"
+    skill = "skill"
 
 
-class Source(_CamelModel):
+class RegistrySource(_CamelModel):
     registry: str = Field(description="Source registry host, e.g. `docker.io`.")
     repository: str = Field(description="Source repository, e.g. `library/redis`.")
+
+
+class GitSource(_CamelModel):
+    url: str = Field(description="Upstream git repository URL, e.g. `https://github.com/o/r.git`.")
+    ref: str = Field(
+        default="HEAD",
+        description="Branch, tag, or commit to ingest. Resolved to an immutable commit sha.",
+    )
+    path: str | None = Field(
+        default=None,
+        description="Sub-directory holding the artifact; the repository root when omitted.",
+    )
+
+
+# A plain union, not a discriminated one: every member sets `extra="forbid"` and their
+# required fields are disjoint, so exactly one member can ever match a given document.
+# This keeps the change additive — no discriminator field, no apiVersion bump.
+Source = RegistrySource | GitSource
 
 
 class Destination(_CamelModel):
@@ -187,9 +206,9 @@ class ImportProfile(_CamelModel):
 
 class Spec(_CamelModel):
     artifact_type: ArtifactType = Field(
-        description="Artifact kind: `image` | `helmChart` | `generic`."
+        description="Artifact kind: `image` | `helmChart` | `generic` | `skill`."
     )
-    source: Source = Field(description="Upstream source registry + repository.")
+    source: Source = Field(description="Upstream source: a registry, or a git repository.")
     deletion_mode: DeletionMode | None = Field(
         default=None,
         description="Policy-level deletion mode; `null` ⇒ defer to the destination/global cascade.",
@@ -202,15 +221,17 @@ class Spec(_CamelModel):
     )
 
     @model_validator(mode="after")
-    def _generic_has_no_transform(self) -> Self:
-        if self.artifact_type is not ArtifactType.generic:
+    def _non_rebuildable_has_no_transform(self) -> Self:
+        if self.artifact_type not in (ArtifactType.generic, ArtifactType.skill):
             return self
+        kind = self.artifact_type.value
         if self.defaults is not None and self.defaults.transform:
-            raise PolicyValidationError("artifactType 'generic' must not declare transform steps")
+            raise PolicyValidationError(f"artifactType '{kind}' must not declare transform steps")
         for imp in self.imports:
             if imp.transform:
                 raise PolicyValidationError(
-                    f"artifactType 'generic' must not declare transform steps (import '{imp.name}')"
+                    f"artifactType '{kind}' must not declare transform steps "
+                    f"(import '{imp.name}')"
                 )
         return self
 

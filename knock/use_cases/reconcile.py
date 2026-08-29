@@ -38,7 +38,7 @@ from knock.domain.lifecycle import (
     build_pending_deletion_annotations,
     parse_pending_mark,
 )
-from knock.domain.mirror_policy import Archive, MirrorPolicy, TransformStep
+from knock.domain.mirror_policy import Archive, MirrorPolicy, RegistrySource, TransformStep
 from knock.domain.policy_merge import resolve_imports
 from knock.domain.reconcile import (
     MirrorArtifact,
@@ -202,8 +202,24 @@ class _Plan:
     transforms: dict[str, _ResolvedTransform]  # variant name → resolved transform
 
 
-def _source_repo(policy: MirrorPolicy) -> str:
+def _require_registry_source(policy: MirrorPolicy) -> RegistrySource:
+    """Narrow `policy.spec.source` to a `RegistrySource`.
+
+    This use case only knows how to reconcile registry-sourced artifacts (image /
+    helmChart / generic); git-sourced skills are ingested through a separate path
+    added in later tasks and should never reach here.
+    """
     s = policy.spec.source
+    if not isinstance(s, RegistrySource):
+        raise InternalError(
+            f"policy '{policy.metadata.name}' has a git source; "
+            "reconcile only supports registry sources"
+        )
+    return s
+
+
+def _source_repo(policy: MirrorPolicy) -> str:
+    s = _require_registry_source(policy)
     return f"{s.registry}/{s.repository}"
 
 
@@ -516,12 +532,13 @@ def _apply_plan(
                     # between the copy and the stamp.
                     stamp_ref = f"{plan.dest_repo}@{source[w.src_tag].digest}"
                     publish_as = dest_ref
+                registry_source = _require_registry_source(plan.policy)
                 out_digest = registry.annotate(
                     stamp_ref,
                     build_stamp_annotations(
                         prefix=label_prefix,
-                        source_registry=plan.policy.spec.source.registry,
-                        source_repository=plan.policy.spec.source.repository,
+                        source_registry=registry_source.registry,
+                        source_repository=registry_source.repository,
                         source_tag=w.src_tag,
                         source_digest=source[w.src_tag].digest,
                         source_revision=source[w.src_tag].revision,

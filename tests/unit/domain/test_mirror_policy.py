@@ -11,7 +11,7 @@ from knock.domain.mirror_policy import (
     Destination,
     ImportProfile,
     MirrorPolicy,
-    Source,
+    RegistrySource,
     Spec,
     TagSelection,
     TransformStep,
@@ -23,7 +23,7 @@ from knock.errors import PolicyValidationError
 
 
 def test_source_parses() -> None:
-    s = Source.model_validate({"registry": "docker.io", "repository": "library/redis"})
+    s = RegistrySource.model_validate({"registry": "docker.io", "repository": "library/redis"})
     assert s.registry == "docker.io"
     assert s.repository == "library/redis"
 
@@ -49,7 +49,7 @@ def test_artifact_type_values() -> None:
 
 def test_unknown_field_is_rejected() -> None:
     with pytest.raises(ValidationError):
-        Source.model_validate({"registry": "docker.io", "repository": "r", "typo": 1})
+        RegistrySource.model_validate({"registry": "docker.io", "repository": "r", "typo": 1})
 
 
 def test_tag_selection_defaults() -> None:
