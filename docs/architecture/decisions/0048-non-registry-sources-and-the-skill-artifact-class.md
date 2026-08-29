@@ -4,8 +4,8 @@ Date: 2026-08-29
 
 ## Status
 
-Accepted. Tasks 1–7 of the vertical slice are on `feat/skill-intake-impl`; the composition root
-(Task 8) is not written, so nothing calls `intake_skill` yet — see Consequences.
+Accepted, and implemented on `feat/skill-intake-impl`. A CLI verb is deliberately outside this
+slice's scope, so nothing calls the intake path in production yet — see Consequences.
 
 Builds on [1. MirrorPolicy format & reconcile contract](0001-mirror-policy-format.md),
 [20. Revision semantics](0020-revision-semantics.md),
@@ -111,16 +111,19 @@ could confirm away.
 
 ## Consequences
 
-- **Nothing composes the chain yet.** Tasks 1–7 landed; Task 8 (the composition root) did not.
-  `intake_skill` and `build_marketplace` have no production caller, and no CLI verb reaches either —
-  nothing under `knock/cli/` mentions intake or skills. Every component is unit-tested in isolation;
-  the end-to-end path is exercised only by an integration test that skips without a live registry.
+- **Every piece exists and is tested, but nothing composes them in production.** `intake_skill` and
+  `build_marketplace` have no caller anywhere in `knock/`, and nothing under `knock/cli/` mentions
+  intake or skills: **a CLI verb was deliberately left out of this slice**, not missed. Until one
+  exists the chain is unreachable by an operator, and the end-to-end integration test is what stands
+  in for it — it always runs, driving a real `git fetch` and the real `regctl` binary against an
+  `ocidir://` OCI layout with no server and no network. `KNOCK_TEST_REGISTRY` adds an otherwise
+  identical networked case as an extra, never as the only path.
 - **A `skill` policy in the reconcile directory is reported as failed.** `reconcile` filters
   git-sourced policies out before the plan phase and reports each with `UnsupportedSourceError`, so
   the run exits 1 with status `partial`. Deliberate and non-silent — a skill policy doing nothing
-  with no output is the failure mode the design forbids — but a team adopting one before Task 8
-  gets a red scheduled reconcile every run. The fix is to hold the policy out of the reconcile
-  directory, never to soften the report.
+  with no output is the failure mode the design forbids — but a team that adds a skill policy
+  before an intake verb exists gets a red scheduled reconcile on every run. The fix is to hold the
+  policy out of the reconcile directory, never to soften the report.
 - **Not done here, each needing its own plan:** SBOM for skills; the SkillSpector gate and the
   registry blob-read port it needs; upstream drift detection and re-intake; the reviewer diff;
   `knock revoke`; network-egress allowlisting; the reconcile merge; and publishing the marketplace
