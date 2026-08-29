@@ -1,7 +1,9 @@
-"""Shared registry-session setup: configure TLS/CA then log in, once per host.
+"""Turning a `RegistryConfig` roster entry into usable registry access.
 
-reconcile, audit, and attach all need a registry authenticated and TLS-configured
-before they touch it. This is the single place that block lives.
+Every use case that walks a registry needs the same two things first: a session —
+TLS/CA configured and, where credentials exist, logged in — and the set of
+repositories the entry actually owns, which for a path-prefixed host is a subset of
+the registry-wide catalog. Both live here so no caller reinvents either.
 """
 
 from __future__ import annotations
@@ -41,13 +43,21 @@ def ensure_registry_session(
 def walk_repo_refs(registry: RegistryPort, cfg: RegistryConfig) -> Iterator[str]:
     """Yield every fully-qualified repo ref this roster entry owns.
 
+    Assumes `ensure_registry_session` has already run for this entry: the catalog read
+    goes to an authenticated registry, and this function does not establish the session
+    itself.
+
     The catalog API is registry-wide, so a path-prefixed host (`ghcr.io/acme`) must filter
     the catalog down to its own namespace — otherwise a coverage walk reports on repos the
-    entry does not own. A bare host filters nothing and yields the whole catalog, exactly
-    as before.
+    entry does not own. The match requires a trailing slash, so a sibling namespace
+    (`acme-staging`) is excluded, and so is a repository named exactly the prefix: knock
+    composes destinations as `{host}/{project}/{repository}` and never places an image at
+    a bare namespace, so such an entry is someone else's repo colliding with the name. A
+    bare host filters nothing and yields the whole catalog, exactly as before.
     """
+    host = cfg.registry_host
     prefix = cfg.path_prefix
-    for repo in registry.list_repositories(cfg.registry_host):
+    for repo in registry.list_repositories(host):
         if prefix and not repo.startswith(f"{prefix}/"):
             continue
-        yield f"{cfg.registry_host}/{repo}"
+        yield f"{host}/{repo}"

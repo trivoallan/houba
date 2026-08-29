@@ -69,3 +69,17 @@ def test_walk_filters_the_catalog_to_the_path_prefix() -> None:
     )
     cfg = RegistryConfig(host="ghcr.io/acme")
     assert list(walk_repo_refs(reg, cfg)) == ["ghcr.io/acme/redis"]
+
+
+def test_walk_handles_a_multi_segment_prefix() -> None:
+    reg = FakeRegistryPort(
+        repositories={
+            "artifactory.corp": [
+                "docker-local/team/redis",
+                "docker-local/teamx/redis",
+                "docker-local/redis",
+            ]
+        }
+    )
+    cfg = RegistryConfig(host="artifactory.corp/docker-local/team")
+    assert list(walk_repo_refs(reg, cfg)) == ["artifactory.corp/docker-local/team/redis"]
