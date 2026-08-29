@@ -206,6 +206,32 @@ class RegctlAdapter:
     def delete_referrer(self, referrer_ref: str) -> None:
         self._run(["manifest", "delete", referrer_ref])
 
+    def put_artifact(
+        self,
+        image_ref: str,
+        *,
+        artifact_type: str,
+        blob_path: Path,
+        media_type: str,
+        annotations: dict[str, str],
+    ) -> str:
+        args = [
+            "artifact",
+            "put",
+            "--artifact-type",
+            artifact_type,
+            "--file-media-type",
+            media_type,
+            "--file",
+            str(blob_path),
+        ]
+        # Sorted so the invocation is byte-stable for a given annotation set, which keeps
+        # the command reproducible and the tests meaningful.
+        for key in sorted(annotations):
+            args += ["--annotation", f"{key}={annotations[key]}"]
+        args.append(image_ref)
+        return self._run(args).strip()
+
     def _run(self, args: list[str], *, stdin: str | None = None) -> str:
         try:
             r = subprocess.run(  # noqa: S603

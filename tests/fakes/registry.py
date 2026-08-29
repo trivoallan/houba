@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from pathlib import Path
 
 from knock.errors import RegctlError
 from knock.ports.registry import ImageInfo, Referrer
@@ -42,6 +43,7 @@ class FakeRegistryPort:
         self.marked: list[tuple[str, str, dict[str, str]]] = []
         self.unmarked: list[str] = []
         self.artifact_referrers: list[tuple[str, str, str, bytes, dict[str, str]]] = []
+        self.artifacts: list[tuple[str, str, Path, str, dict[str, str]]] = []
 
     def configure_registry(self, host: str, *, tls_verify: bool, ca_cert: str | None) -> None:
         self.configured.append((host, tls_verify, ca_cert))
@@ -119,3 +121,19 @@ class FakeRegistryPort:
 
     def delete_referrer(self, referrer_ref: str) -> None:
         self.unmarked.append(referrer_ref)
+
+    def put_artifact(
+        self,
+        image_ref: str,
+        *,
+        artifact_type: str,
+        blob_path: Path,
+        media_type: str,
+        annotations: dict[str, str],
+    ) -> str:
+        if image_ref in self._fail_put:
+            raise RegctlError(f"fake put_artifact failure for {image_ref}")
+        self.artifacts.append((image_ref, artifact_type, blob_path, media_type, dict(annotations)))
+        # deterministic synthetic manifest digest, keyed on the file's own bytes — mirrors
+        # the real adapter, where the layer digest is the sha256 of the file itself.
+        return f"sha256:{hashlib.sha256(blob_path.read_bytes()).hexdigest()}"
