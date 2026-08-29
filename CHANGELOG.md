@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.2](https://github.com/trivoallan/knock/compare/v0.9.1...v0.9.2) (2026-08-29)
+
+
+### Bug Fixes
+
+* **use_cases:** skip referrers-fallback tags in every tag walk ([#248](https://github.com/trivoallan/knock/issues/248)) ([3186a20](https://github.com/trivoallan/knock/commit/3186a20ccd26c81e95cbde295bd992e7b5522cb4))
+
 ## [0.9.1](https://github.com/trivoallan/knock/compare/v0.9.0...v0.9.1) (2026-08-29)
 
 
