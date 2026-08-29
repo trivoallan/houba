@@ -253,3 +253,118 @@ def test_an_unsafe_ref_in_a_policy_is_a_policy_validation_error_exit_1() -> None
         parse_mirror_policy(text)
     assert "ref" in str(excinfo.value)
     assert exit_code_for(excinfo.value) == 1
+
+
+_SKILL_WITH_ARCHIVE = """
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata:
+  name: example-skill
+spec:
+  artifactType: skill
+  source:
+    url: https://github.com/example/agent-skill.git
+    ref: v1.2.0
+  imports:
+    - name: release
+      tags: {}
+      archive:
+        keep: 3
+      destinations:
+        - project: skills
+          repository: example-skill
+"""
+
+_SKILL_WITH_DEFAULTS_ARCHIVE = """
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata:
+  name: example-skill
+spec:
+  artifactType: skill
+  source:
+    url: https://github.com/example/agent-skill.git
+    ref: v1.2.0
+  defaults:
+    archive:
+      keep: 3
+  imports:
+    - name: release
+      tags: {}
+      destinations:
+        - project: skills
+          repository: example-skill
+"""
+
+_SKILL_WITH_DELETION_MODE = """
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata:
+  name: example-skill
+spec:
+  artifactType: skill
+  deletionMode: purge
+  source:
+    url: https://github.com/example/agent-skill.git
+    ref: v1.2.0
+  imports:
+    - name: release
+      tags: {}
+      destinations:
+        - project: skills
+          repository: example-skill
+"""
+
+
+def test_skill_import_may_not_declare_archive() -> None:
+    # Refused, not ignored: skills are never deleted (spec decision 4), so an author
+    # who writes `archive` believes their policy prunes when it never will.
+    with pytest.raises(PolicyValidationError, match="must not declare a retention policy"):
+        parse_mirror_policy(_SKILL_WITH_ARCHIVE)
+
+
+def test_skill_defaults_may_not_declare_archive() -> None:
+    with pytest.raises(PolicyValidationError, match="must not declare a retention policy"):
+        parse_mirror_policy(_SKILL_WITH_DEFAULTS_ARCHIVE)
+
+
+def test_skill_may_not_declare_deletion_mode() -> None:
+    with pytest.raises(PolicyValidationError, match="must not declare a deletion mode"):
+        parse_mirror_policy(_SKILL_WITH_DELETION_MODE)
+
+
+_IMAGE_WITH_ARCHIVE_AND_DELETION_MODE = """
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata:
+  name: redis
+spec:
+  artifactType: image
+  deletionMode: purge
+  source:
+    registry: docker.io
+    repository: library/redis
+  defaults:
+    archive:
+      keep: 5
+  imports:
+    - name: v7
+      tags: {}
+      archive:
+        keep: 3
+      destinations:
+        - project: demo
+          repository: redis
+"""
+
+
+def test_image_policy_may_still_declare_archive_and_deletion_mode() -> None:
+    # The guard is skill-only. This is the test that actually holds it to that:
+    # it declares deletionMode, defaults.archive AND a per-import archive — the three
+    # fields the validator refuses — and requires them all to parse for an image.
+    # The previous version used a fixture declaring none of them, so it passed even
+    # with the validator deleted.
+    policy = parse_mirror_policy(_IMAGE_WITH_ARCHIVE_AND_DELETION_MODE)
+    assert policy.spec.deletion_mode is not None
+    assert policy.spec.defaults is not None and policy.spec.defaults.archive is not None
+    assert policy.spec.imports[0].archive is not None
