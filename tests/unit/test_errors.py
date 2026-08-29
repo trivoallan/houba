@@ -2,6 +2,10 @@ import pytest
 
 from knock.errors import (
     AdapterError,
+    ArchiveError,
+    ArchiveLayoutError,
+    ArtifactAnnotationError,
+    ArtifactBlobPathError,
     BuildkitError,
     ConfigError,
     DomainError,
@@ -67,6 +71,23 @@ def test_unknown_format_error_is_domain_exit_1() -> None:
     assert exit_code_for(UnknownFormatError("nope")) == 1
 
 
+def test_source_error_is_adapter_error_exit_2() -> None:
+    from knock.errors import SourceError
+
+    assert issubclass(SourceError, AdapterError)
+    assert exit_code_for(SourceError("git exploded")) == 2
+
+
+def test_source_path_error_is_domain_error_exit_1() -> None:
+    # A bad `path:` in a policy is the operator's input, not infrastructure — it must not
+    # share SourceError's exit 2, and must not fall through to 4 ("this is a knock bug").
+    from knock.errors import SourcePathError
+
+    assert issubclass(SourcePathError, DomainError)
+    assert not issubclass(SourcePathError, AdapterError)
+    assert exit_code_for(SourcePathError("no such subdir")) == 1
+
+
 def test_queue_error_is_adapter_error_exit_2():
     assert issubclass(QueueError, AdapterError)
     assert exit_code_for(QueueError("boom")) == 2
@@ -75,3 +96,23 @@ def test_queue_error_is_adapter_error_exit_2():
 def test_queue_unavailable_has_distinct_exit_5():
     assert issubclass(QueueUnavailableError, QueueError)
     assert exit_code_for(QueueUnavailableError("redis down")) == 5
+
+
+def test_archive_error_is_domain_exit_1() -> None:
+    assert issubclass(ArchiveError, DomainError)
+    assert exit_code_for(ArchiveError("bad tree")) == 1
+
+
+def test_archive_layout_error_is_archive_error_exit_1() -> None:
+    assert issubclass(ArchiveLayoutError, ArchiveError)
+    assert exit_code_for(ArchiveLayoutError("no marker")) == 1
+
+
+def test_artifact_annotation_error_is_domain_exit_1():
+    assert issubclass(ArtifactAnnotationError, DomainError)
+    assert exit_code_for(ArtifactAnnotationError("bad key")) == 1
+
+
+def test_artifact_blob_path_error_is_domain_exit_1():
+    assert issubclass(ArtifactBlobPathError, DomainError)
+    assert exit_code_for(ArtifactBlobPathError("not a file")) == 1

@@ -1,0 +1,68 @@
+# External agent skill from git — DESIGNED, NOT YET RUNNABLE.
+#
+# Places one real, public agent skill — `mcp-builder`, from Anthropic's public skills
+# repository — through knock's intake path: the repository is fetched at an immutable
+# commit, the sub-tree is packaged into a byte-reproducible zip, stamped, and pushed as
+# an OCI artifact (`application/vnd.knock.skill.v1`) a developer's client installs from.
+#
+# Same thesis as an image policy — one declared upstream, one placement, one provenance
+# stamp — for an artifact that has no base image and no tag list.
+#
+# WHAT WORKS TODAY AND WHAT DOES NOT
+#
+#   Every piece exists and is tested: the packaging planner, the reproducible zip
+#   writer, the git adapter, `put_artifact`, the source-derived stamp, and the
+#   composition in `use_cases/intake.py`. What is missing is the CLI verb that runs
+#   them in production — a later slice.
+#
+#   So this file documents the design; it does not yet run. Putting it in a directory
+#   passed to `knock reconcile` gives an explicit red, not a silent no-op:
+#
+#     $ knock reconcile docs/examples/skills
+#     policy 'mcp-builder' is git-sourced; not handled by reconcile
+#     # UnsupportedSourceError, status=failed, exit 1
+#
+#   Deliberate: a team adopting a skill policy early gets a failing scheduled run
+#   rather than a green one that mirrored nothing.
+#
+# THREE SHAPE RULES THAT ARE NOT OBVIOUS
+#
+#   1. `artifactType: skill` REQUIRES a git source, and accepts nothing else. `image`
+#      and `helmChart` are the mirror rule: registry only. (`generic` deliberately
+#      takes either, so a later artifact class can be git-sourced without a schema
+#      change.)
+#
+#   2. `tags: {}` is required by the schema and READ BY NOTHING. Selection for a git
+#      source is the `ref` below, not a tag regex. The empty mapping is the honest
+#      spelling; a regex here would look like it selects something.
+#
+#   3. NO `transform:` — not in `defaults`, not in an import. A skill is placed as
+#      published; there is no base image to re-root onto, so hardening has nothing to
+#      act on. Declaring a step is a validation error, not a silent no-op.
+#
+apiVersion: knock.io/v1alpha1
+kind: MirrorPolicy
+metadata:
+  name: mcp-builder
+spec:
+  artifactType: skill
+  source:
+    url: https://github.com/anthropics/skills.git
+    # Pinned to a commit, not a branch: a provenance product should demonstrate the
+    # immutable case. A branch or tag is equally valid and is resolved to this same
+    # sha before anything is packaged — the resolved value is what gets stamped as
+    # `org.opencontainers.image.revision`.
+    ref: 3b3fad96af16a10759d930941b4520ba0c40edae   # main @ 2026-08-21
+    # One skill out of the monorepo, not the whole 4.3 MiB tree. `skills/mcp-builder`
+    # holds a root `SKILL.md`, which is what satisfies the packaging planner's layout
+    # check once `path` has re-rooted the tree. Verified against the real tree: 10
+    # files, 121,756 bytes — 0.12% of the 100 MiB archive bound.
+    path: skills/mcp-builder
+  imports:
+    - name: release
+      owners:
+        - group:default/developer-experience   # stamped as io.knock.owners
+      tags: {}                  # required, unread — see rule 2 above
+      destinations:
+        - project: skills
+          repository: mcp-builder

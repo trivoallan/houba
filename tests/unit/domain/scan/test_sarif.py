@@ -111,6 +111,24 @@ def test_policy_keys_present_and_zero_when_no_results() -> None:
     )
 
 
+def test_ruleset_hash_read_from_a_result_property_bag() -> None:
+    # Where a pass receipt carries it (the shape regis emits on a clean run).
+    receipt = {"ruleId": "evaluated", "kind": "pass", "properties": {"ruleset_hash": "sha256:abc"}}
+    assert SarifMapper().summarize(_sarif([receipt])).facts["ruleset.hash"] == "sha256:abc"
+
+
+def test_run_level_ruleset_hash_wins_over_a_result_one() -> None:
+    # Run level is the profile's canonical home: it survives a breached run, which has no receipt.
+    doc = json.loads(_sarif([{"ruleId": "x", "kind": "pass", "properties": {"ruleset_hash": "r"}}]))
+    doc["runs"][0]["properties"] = {"ruleset_hash": "sha256:run"}
+    assert SarifMapper().summarize(json.dumps(doc).encode()).facts["ruleset.hash"] == "sha256:run"
+
+
+def test_ruleset_hash_fact_omitted_when_the_producer_declares_none() -> None:
+    # Never fabricated: no fingerprint in, no fact out (ADR 0020's rule).
+    assert "ruleset.hash" not in SarifMapper().summarize(_sarif([{"ruleId": "x"}])).facts
+
+
 def test_malformed_json_raises_scan_report_error() -> None:
     with pytest.raises(ScanReportError, match="JSON"):
         SarifMapper().summarize(b"{not json")

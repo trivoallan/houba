@@ -202,14 +202,15 @@ retention, delegated deletion, scan ingestion. Every `reconcile` is **plan-then-
 knock/
 ├── domain/      pure logic — mirror_policy, selection, aliases, semver, expand, policy_merge,
 │                variants, reconcile, collision, sharding, stamp, attestation, sbom, coverage,
-│                verify, lifecycle, retention, purge, deletion_mode, scan/, scan_queue,
+│                verify, lifecycle, retention, purge, deletion_mode, packaging, scan/, scan_queue,
 │                transforms/
 ├── ports/       typing.Protocol interfaces — registry, image_builder, attestor, sbom, queue,
-│                usage_oracle, reporter, clock
-├── adapters/    concrete I/O — regctl_cli, buildkit_cli, cosign_cli, syft_cli, command_usage,
-│                redis_streams, structlog_reporter, system_clock
+│                usage_oracle, reporter, clock, source, archiver
+├── adapters/    concrete I/O and external formats — regctl_cli, buildkit_cli, cosign_cli,
+│                syft_cli, command_usage, redis_streams, structlog_reporter, system_clock,
+│                marketplace_json, zip_writer, tree_walker, local_archiver, git_cli
 ├── use_cases/   orchestration — loader, reconcile, purge, attach, audit, gc, verify,
-│                scan_worker, registry_session, report
+│                scan_worker, registry_session, report, intake
 └── cli/         Typer entry points — reconcile, purge, attach, audit, gc, verify, scan,
                  version
 ```
