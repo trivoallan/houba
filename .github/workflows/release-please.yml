@@ -46,10 +46,16 @@ jobs:
       # release-please bumps pyproject.toml on the release PR but never re-locks, so
       # uv.lock's root version lags by one release. Re-sync it on that same PR branch.
       # ponytail: re-runs `uv lock` whole; fine — only the root version changes.
+      #
+      # The `|| '{}'` guard is load-bearing. A step's `env:` expressions are evaluated
+      # even when its `if:` is false, and on a *release* run (as opposed to a run that
+      # opens the PR) `outputs.pr` is empty — so an unguarded `fromJSON('')` is a
+      # template error that fails the whole job, which skips `publish` and leaves the
+      # release tagged with no image ever pushed.
       - name: Re-lock uv.lock on the release PR
         if: ${{ steps.release.outputs.pr }}
         env:
-          BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          BRANCH: ${{ fromJSON(steps.release.outputs.pr || '{}').headBranchName }}
         run: |
           git fetch origin "$BRANCH"
           git checkout "$BRANCH"
