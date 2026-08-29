@@ -4,8 +4,29 @@
     {
       "name": "docs",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "website", "run", "serve"],
+      "runtimeArgs": [
+        "--prefix",
+        "website",
+        "run",
+        "serve"
+      ],
       "port": 3000
+    },
+    {
+      "name": "structurizr",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": [
+        "run",
+        "--rm",
+        "-p",
+        "8081:8080",
+        "-v",
+        "./docs/architecture:/usr/local/structurizr",
+        "structurizr/structurizr",
+        "local"
+      ],
+      "port": 8081,
+      "autoPort": false
     }
   ]
 }
