@@ -41,15 +41,20 @@ __all__ = [
 # is no compression-ratio slack to reason about when tuning this bound.
 MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
 
-# The client (Claude Code) accepts a plugin whose root holds `.claude-plugin/` or one of
-# the entries below — verified against Claude Code 2.1.251, recorded in
-# `docs/superpowers/specs/2026-08-29-external-skill-intake-design.md` ("Verified — the
-# client contract (2026-08-29)", and the packaging error-handling table further down that
-# same spec). That spec is this list's source of truth: if the client's accepted root
-# layout ever changes, this tuple goes stale *silently* — a correctly-formed skill would
-# be refused at intake with a message that lists these strings and gives no hint that the
-# list itself, not the skill, is what's wrong. Re-verify against the spec (or the client
-# directly) before trusting this list after a Claude Code upgrade.
+# The client (Claude Code) accepts a plugin whose root — or exactly one level inside a
+# single wrapper directory, the shape `git archive` and a GitHub release tarball produce —
+# holds `.claude-plugin/` or one of the entries below. Source of truth:
+# `docs/superpowers/specs/2026-08-29-external-skill-intake-design.md`, "## Error handling"
+# table, the `packaging | no SKILL.md / invalid layout` row, which states both the marker
+# list itself and its "optionally inside a single wrapper directory" clause. (Not the
+# earlier "Verified — the client contract (2026-08-29)" section of that same spec — that
+# section covers zip determinism, blob digests and redirect handling, verified against
+# Claude Code 2.1.251, and never mentions plugin markers; citing it for this list would
+# overstate what it actually says.) If the client's accepted layout ever changes, this
+# tuple goes stale *silently* — a correctly-formed skill would be refused at intake with a
+# message that lists these strings and gives no hint that the list itself, not the skill,
+# is what's wrong. Re-verify against that spec row (or the client directly) before trusting
+# this list after a Claude Code upgrade.
 #
 # Split by kind because `plan_archive` receives files only, never directories (see
 # `SourceFile`) — a root segment can only be classified as a directory-marker candidate
@@ -131,7 +136,8 @@ def _escape_reason(path: str) -> str | None:
     return None
 
 
-def _has_marker(paths: list[str]) -> bool:
+def _root_marker(paths: list[str]) -> bool:
+    """True if some path in `paths` carries a plugin marker at position 0."""
     for path in paths:
         head, sep, _ = path.partition("/")
         if sep:
@@ -142,11 +148,34 @@ def _has_marker(paths: list[str]) -> bool:
     return False
 
 
+def _has_marker(paths: list[str]) -> bool:
+    """True if `paths` carries a plugin marker at the root, or one level inside a
+    single wrapper directory.
+
+    The wrapper allowance only applies when every path shares the *same* single root
+    segment — the shape a `git archive` tarball or a GitHub release zip produces, where
+    the whole tree sits under one directory named after the repository and revision.
+    Stripping that one shared segment and checking again is exactly one level of
+    nesting, never arbitrary depth: `a/b/skills/foo.md` has a single root segment `a`,
+    but after stripping it `b/skills/foo.md` still has `skills` one level further in,
+    which `_root_marker` does not see as a root-level marker — so it is correctly
+    refused, not accepted.
+    """
+    if _root_marker(paths):
+        return True
+    roots = {path.partition("/")[0] for path in paths}
+    if len(roots) != 1:
+        return False
+    (wrapper,) = roots
+    inner = [path.removeprefix(f"{wrapper}/") for path in paths if path.startswith(f"{wrapper}/")]
+    return bool(inner) and _root_marker(inner)
+
+
 def _layout_error(paths: list[str]) -> ArchiveLayoutError:
     found_dirs = sorted({p.partition("/")[0] for p in paths if "/" in p})
     found_files = sorted({p for p in paths if "/" not in p})
     return ArchiveLayoutError(
-        "no plugin content at the root — "
+        "no plugin content at the root (or one level inside a single wrapper directory) — "
         f"root directories found: {', '.join(found_dirs) if found_dirs else 'none'}; "
         f"root files found: {', '.join(found_files) if found_files else 'none'}; "
         f"expected a directory marker among [{', '.join(PLUGIN_MARKER_DIRS)}] "
@@ -162,7 +191,9 @@ def plan_archive(
     Every file is checked once, in a single pass:
 
     1. A negative declared size is a caller bug, not a third-party attack, so it is
-       raised on immediately rather than accumulated with the rest.
+       raised on immediately rather than accumulated with the rest. Zero is a valid
+       size (an empty `.gitkeep`, `__init__.py`, or `py.typed` is ordinary in a real
+       skill tree) — only strictly negative sizes are rejected.
     2. Symlinks are collected across the whole list and reported together, because a
        third-party tree with one usually has several (`node_modules`, doc symlinks) and
        this function already walks the whole list — accumulating the rest is nearly free.
@@ -171,20 +202,31 @@ def plan_archive(
 
     Only once every file has cleared all of the above are their *normalised* paths
     checked for collisions — refusing both an identical path listed twice and a
-    case-insensitive collision (`SKILL.md` vs `skill.MD`). On the case-insensitive
-    filesystems this front door exists to protect (macOS, Windows), a zip holding both
-    lets extraction order — not what was reviewed — decide which one lands, and for the
-    case-variant kind the reviewed member name still appears in the listing. Refusing is
-    the safer default given those target platforms. Normalisation happens first because
-    it can itself create a duplicate (`./a.md` and `a.md` normalise to the same member),
-    so checking the raw paths for collisions would miss that case.
+    collision that only differs by ASCII case (`SKILL.md` vs `skill.MD`), compared with
+    `str.lower()` rather than `str.casefold()`. `casefold()` performs full Unicode
+    folding (ß→ss, ligature decomposition, final vs. medial sigma), which is strictly
+    broader than what any target filesystem actually conflates — neither NTFS's upcase
+    table nor APFS's folding merges `straße.md` and `strasse.md`, so refusing that pair
+    would refuse trees no real extraction could ever confuse. `lower()` still catches
+    what this check exists for: `SKILL.md` vs `skill.MD`, and the genuinely confusable
+    U+212A Kelvin sign vs `K`. On the case-insensitive filesystems this front door
+    exists to protect (macOS, Windows), a zip holding a genuine case collision lets
+    extraction order — not what was reviewed — decide which file lands, and for the
+    case-variant kind the reviewed member name still appears in the listing; refusing
+    is the safer default given those target platforms. Normalisation happens first
+    because it can itself create a duplicate (`./a.md` and `a.md` normalise to the same
+    member), so checking the raw paths for collisions would miss that case.
 
     Finally the total size is compared against `max_bytes`, and the tree is checked for
-    a plugin marker at its root. The returned entries use the normalised path throughout
-    — for the escape check, the collision check, the marker check, the sort key, and
-    `ArchiveEntry.path` — so a member name like `skills/../skills/a.md`, which does not
-    escape the root but is exactly the shape zip-slip detectors flag, is never packaged
-    as such: what's stored is the canonical path a human reviewing the plan would expect.
+    a plugin marker at its root (see `_has_marker` for the one-level wrapper-directory
+    allowance). The returned entries use the normalised path throughout — for the escape
+    check, the collision check, the marker check, the sort key, and `ArchiveEntry.path`
+    — so a member name like `skills/../skills/a.md`, which does not escape the root but
+    is exactly the shape zip-slip detectors flag, is never packaged as such: what's
+    stored is the canonical path a human reviewing the plan would expect. It would also,
+    unnormalised, satisfy the root marker check without packaging any real plugin
+    content (`.claude-plugin/../evil.md` has a root segment of `.claude-plugin`) —
+    normalising before the marker check closes that gap too.
     """
     for file in files:
         if file.size < 0:
@@ -221,7 +263,7 @@ def plan_archive(
 
     collisions: dict[str, list[str]] = {}
     for _, path in normalised:
-        collisions.setdefault(path.casefold(), []).append(path)
+        collisions.setdefault(path.lower(), []).append(path)
     colliding = {key: paths for key, paths in collisions.items() if len(paths) > 1}
     if colliding:
         details = []
@@ -239,8 +281,9 @@ def plan_archive(
     total = sum(file.size for file, _ in normalised)
     if total > max_bytes:
         raise ArchiveError(
-            f"tree exceeds the archive bound: {total / 2**20:.2f} MiB > "
-            f"{max_bytes / 2**20:.2f} MiB — trim or exclude files before packaging"
+            f"tree exceeds the archive bound: {total / 2**20:.2f} MiB ({total} bytes) > "
+            f"{max_bytes / 2**20:.2f} MiB ({max_bytes} bytes) — trim or exclude files "
+            "before packaging"
         )
 
     paths = [path for _, path in normalised]

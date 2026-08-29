@@ -2,6 +2,8 @@ import pytest
 
 from knock.errors import (
     AdapterError,
+    ArchiveError,
+    ArchiveLayoutError,
     BuildkitError,
     ConfigError,
     DomainError,
@@ -75,3 +77,13 @@ def test_queue_error_is_adapter_error_exit_2():
 def test_queue_unavailable_has_distinct_exit_5():
     assert issubclass(QueueUnavailableError, QueueError)
     assert exit_code_for(QueueUnavailableError("redis down")) == 5
+
+
+def test_archive_error_is_domain_exit_1() -> None:
+    assert issubclass(ArchiveError, DomainError)
+    assert exit_code_for(ArchiveError("bad tree")) == 1
+
+
+def test_archive_layout_error_is_archive_error_exit_1() -> None:
+    assert issubclass(ArchiveLayoutError, ArchiveError)
+    assert exit_code_for(ArchiveLayoutError("no marker")) == 1
