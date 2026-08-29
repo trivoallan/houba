@@ -221,6 +221,27 @@ def test_layout_error_reports_what_was_actually_found_at_the_root() -> None:
     assert "root files found: README.md" in message
 
 
+def test_layout_error_says_the_marker_list_itself_may_be_the_stale_thing() -> None:
+    """The refusal must not present its own marker list as authoritative.
+
+    `PLUGIN_MARKER_DIRS` goes stale *silently* when the client's accepted layout
+    changes: a correct skill is then refused by a message that reads as if the artifact
+    were at fault. The submitter concludes their skill is malformed, works around the
+    gate, and installs by hand — so the fleet keeps a front door that certifies nothing.
+
+    Asserted with `endswith` rather than a substring because this clause has to be the
+    last thing read, after the marker lists it is qualifying. Every other test here
+    matches on the `"no plugin content"` prefix, so without this one the whole clause
+    could be deleted and the suite would stay green.
+    """
+    with pytest.raises(ArchiveLayoutError) as excinfo:
+        plan_archive([f("README.md")])
+    assert str(excinfo.value).endswith(
+        " — if this layout looks correct, the marker list above may be stale: re-verify it"
+        " against the intake spec (or the client) before assuming the artifact is at fault"
+    )
+
+
 def test_refuses_a_bare_file_named_after_a_directory_marker() -> None:
     # "skills" with no "/" after it is a file, not the skills/ directory, and must not
     # satisfy the directory marker just because the two strings match.
