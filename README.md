@@ -202,7 +202,7 @@ retention, delegated deletion, scan ingestion. Every `reconcile` is **plan-then-
 knock/
 ├── domain/      pure logic — mirror_policy, selection, aliases, semver, expand, policy_merge,
 │                variants, reconcile, collision, sharding, stamp, attestation, sbom, coverage,
-│                verify, lifecycle, retention, purge, deletion_mode, scan/, scan_queue,
+│                verify, lifecycle, retention, purge, deletion_mode, packaging, scan/, scan_queue,
 │                transforms/
 ├── ports/       typing.Protocol interfaces — registry, image_builder, attestor, sbom, queue,
 │                usage_oracle, reporter, clock

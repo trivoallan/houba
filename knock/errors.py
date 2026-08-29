@@ -7,6 +7,7 @@ from __future__ import annotations
 
 __all__ = [
     "AdapterError",
+    "ArchiveError",
     "BuildkitError",
     "ConfigError",
     "CosignError",
@@ -32,6 +33,11 @@ class KnockError(Exception):
 
 class DomainError(KnockError):
     """Business logic or validation error (exit 1)."""
+
+
+class ArchiveError(DomainError):
+    """A source tree cannot be packaged safely (symlink, path escape, size, or
+    missing plugin marker)."""
 
 
 class PolicyValidationError(DomainError):
