@@ -14,10 +14,12 @@ from pathlib import Path
 from knock.errors import ArtifactAnnotationError, ArtifactBlobPathError, RegctlError
 from knock.ports.registry import ImageInfo, Referrer
 
-# What a resolved manifest digest looks like on stdout — used to catch regctl printing
-# nothing (its default for `artifact put` by tag: no --format means no output at all)
-# or anything else that isn't a digest, rather than silently returning it as one.
-_DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}$")
+# What a resolved manifest digest looks like on stdout. Used by both put_artifact and
+# put_referrer to catch regctl printing nothing (its default for `artifact put` without
+# --format: no output at all) or anything else that isn't a digest, rather than silently
+# returning it as one. cf. cosign_cli._DIGEST_RE — same shape; no `$` needed because both
+# call sites use .fullmatch().
+_DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
 
 
 class RegctlAdapter:
@@ -195,7 +197,20 @@ class RegctlAdapter:
         blob: bytes = b"",
         media_type: str | None = None,
     ) -> str:
-        args = ["artifact", "put", "--subject", image_ref, "--artifact-type", artifact_type]
+        # `artifact put` prints nothing on stdout when pushing by tag or by subject — only
+        # `--by-digest` or an explicit `--format` get a digest out of it. --format is the
+        # established idiom here (list_referrers already relies on it), and it is required
+        # on both invocation paths below so the return value is never a silent lie.
+        args = [
+            "artifact",
+            "put",
+            "--subject",
+            image_ref,
+            "--artifact-type",
+            artifact_type,
+            "--format",
+            "{{ .Manifest.GetDescriptor.Digest }}",
+        ]
         for key, value in annotations.items():
             args += ["--annotation", f"{key}={value}"]
         if blob:
@@ -208,7 +223,13 @@ class RegctlAdapter:
                 out = self._run(args)
         else:
             out = self._run(args, stdin="")
-        return out.strip()
+        digest = out.strip()
+        if not _DIGEST_RE.fullmatch(digest):
+            raise RegctlError(
+                f"regctl artifact put returned no digest for {image_ref} "
+                f"(expected 'sha256:<hex>', got {digest!r})"
+            )
+        return digest
 
     def delete_referrer(self, referrer_ref: str) -> None:
         self._run(["manifest", "delete", referrer_ref])

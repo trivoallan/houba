@@ -108,35 +108,48 @@ case "$cmd" in
         esac
         ;;
     "artifact put")
+        # Real regctl prints nothing on stdout for `artifact put` when pushing by tag
+        # or by subject — a digest only comes back with --by-digest or an explicit
+        # --format. Model that faithfully: no --format in argv => no output. The
+        # fictional "harbor.corp/lib/redis@sha256:ref123" this branch used to print was
+        # both the wrong shape and output regctl never produces, and it is what hid the
+        # empty-digest defect fixed in #255.
         case "$scenario" in
-            artifact-put-digest)
-                # put_artifact's --format invocation: regctl prints the bare resolved
-                # manifest digest (verified against v0.11.5 with
-                # --format '{{ .Manifest.GetDescriptor.Digest }}'). Gated on --format
-                # actually being present in argv (like the apply-fail-boom scenario
-                # above gates on "boom" in "$*") so a regression that drops the flag is
-                # caught behaviourally here too, not only by the argv-log assertion.
-                case "$*" in
-                    *--format*)
-                        printf 'sha256:4c45eed01aae4fb61e6576dda645909c568a9014bb02baf3cca6e4e93717efa7\n' ;;
-                    *)
-                        : ;;
-                esac
-                ;;
+            put-blank)
+                # put_referrer: regctl goes silent even though --format was requested
+                # (tool bug / version drift) — the digest check must still catch it.
+                : ;;
             artifact-put-empty)
                 # put_artifact by tag with no --format prints nothing at all on success
-                # (verified against v0.11.5) — this scenario simulates the adapter
-                # failing to pass --format, so the digest-shape check must catch it.
+                # (verified against v0.11.5) — simulates the adapter failing to pass
+                # --format, so the digest-shape check must catch it.
                 : ;;
             artifact-put-nondigest)
                 # A realistic non-empty, non-digest RC-0 output (a Go template
-                # evaluating to a zero value) — proves the digest-shape check rejects
-                # more than just an empty string.
-                printf '<no value>\n' ;;
+                # evaluating to a zero value) — proves the shape check rejects more
+                # than just an empty string.
+                printf '<no value>
+' ;;
+            artifact-put-digest)
+                # put_artifact's --format invocation. Gated on --format actually being
+                # present so a regression that drops the flag fails behaviourally here,
+                # not only via the argv-log assertion.
+                case "$*" in
+                    *--format*)
+                        printf 'sha256:4c45eed01aae4fb61e6576dda645909c568a9014bb02baf3cca6e4e93717efa7
+' ;;
+                    *) : ;;
+                esac
+                ;;
             *)
-                # Serves put_referrer: annotation-only (no blob; stdout ignored) and
-                # blob-carrying (returns the referrer digest).
-                printf 'harbor.corp/lib/redis@sha256:ref123\n' ;;
+                # Serves put_referrer, which always passes --format.
+                case "$*" in
+                    *--format*)
+                        printf 'sha256:a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4a1b2c3d4
+' ;;
+                    *) : ;;
+                esac
+                ;;
         esac
         ;;
     *)
