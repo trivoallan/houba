@@ -108,9 +108,22 @@ case "$cmd" in
         esac
         ;;
     "artifact put")
-        # Serves put_referrer: annotation-only (no blob; stdout ignored) and
-        # blob-carrying (returns the referrer digest).
-        printf 'harbor.corp/lib/redis@sha256:ref123\n'
+        case "$scenario" in
+            artifact-put-digest)
+                # put_artifact's --format invocation: regctl prints the bare resolved
+                # manifest digest (verified against v0.11.5 with
+                # --format '{{ .Manifest.GetDescriptor.Digest }}').
+                printf 'sha256:4c45eed01aae4fb61e6576dda645909c568a9014bb02baf3cca6e4e93717efa7\n' ;;
+            artifact-put-empty)
+                # put_artifact by tag with no --format prints nothing at all on success
+                # (verified against v0.11.5) — this scenario simulates the adapter
+                # failing to pass --format, so the digest-shape check must catch it.
+                : ;;
+            *)
+                # Serves put_referrer: annotation-only (no blob; stdout ignored) and
+                # blob-carrying (returns the referrer digest).
+                printf 'harbor.corp/lib/redis@sha256:ref123\n' ;;
+        esac
         ;;
     *)
         echo "fake-regctl: unknown command '$cmd'" >&2

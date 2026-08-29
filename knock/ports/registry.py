@@ -88,5 +88,9 @@ class RegistryPort(Protocol):
         Distinct from `put_referrer`, which always hangs off a subject. Returns the
         resulting manifest digest. The layer digest is the sha256 of the file itself,
         which is what a content-addressed consumer will pin.
+
+        Takes a path rather than `put_referrer`'s in-memory `bytes`: regctl streams the
+        file straight to the registry, so a large bundle (e.g. a skill zip) is never
+        materialised in the Python process.
         """
         ...

@@ -134,6 +134,8 @@ class FakeRegistryPort:
         if image_ref in self._fail_put:
             raise RegctlError(f"fake put_artifact failure for {image_ref}")
         self.artifacts.append((image_ref, artifact_type, blob_path, media_type, dict(annotations)))
-        # deterministic synthetic manifest digest, keyed on the file's own bytes — mirrors
-        # the real adapter, where the layer digest is the sha256 of the file itself.
-        return f"sha256:{hashlib.sha256(blob_path.read_bytes()).hexdigest()}"
+        # deterministic synthetic manifest digest, keyed on the path string (not its
+        # contents — the fake shouldn't need a real file on disk to seed a test). This is
+        # a *manifest* digest, like the real adapter returns, not a layer digest — those
+        # are never the same thing.
+        return f"sha256:{hashlib.sha256(str(blob_path).encode()).hexdigest()}"
