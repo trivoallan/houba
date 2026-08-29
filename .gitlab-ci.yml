@@ -14,7 +14,7 @@ stages: [reconcile]
 
 reconcile:
   stage: reconcile
-  image: ghcr.io/trivoallan/knock:0.8.0
+  image: ghcr.io/trivoallan/knock:0.9.3
   # Only on a schedule (and manual), never on every push.
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
