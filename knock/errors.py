@@ -44,8 +44,12 @@ class DomainError(KnockError):
 
 
 class ArchiveError(DomainError):
-    """A source tree cannot be packaged safely (symlink, path escape, collision, or
-    size)."""
+    """A source tree, or a planned entry list, cannot be packaged safely: a symlink, a
+    path that escapes the root, a non-canonical or duplicate archive path, an
+    oversized tree, or a tree with no plugin marker. Raised both while planning
+    (`knock.domain.packaging.plan_archive`) and while writing
+    (`knock.adapters.zip_writer.write_archive`), since the writer re-checks what it
+    can independently verify from the filesystem rather than trusting the plan."""
 
 
 class ArchiveLayoutError(ArchiveError):
@@ -64,13 +68,6 @@ class ArtifactAnnotationError(DomainError):
 class ArtifactBlobPathError(DomainError):
     """A `put_artifact` blob_path does not exist or is not a regular file (e.g. a
     directory, which regctl otherwise pushes as a bogus layer at RC 0)."""
-
-    """A source tree, or a planned entry list, cannot be packaged safely: a symlink, a
-    path that escapes the root, a non-canonical or duplicate archive path, an
-    oversized tree, or a tree with no plugin marker. Raised both while planning
-    (`knock.domain.packaging.plan_archive`) and while writing
-    (`knock.adapters.zip_writer.write_archive`), since the writer re-checks what it
-    can independently verify from the filesystem rather than trusting the plan."""
 
 
 class PolicyValidationError(DomainError):
