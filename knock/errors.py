@@ -8,6 +8,7 @@ from __future__ import annotations
 __all__ = [
     "AdapterError",
     "ArchiveError",
+    "ArchiveLayoutError",
     "BuildkitError",
     "ConfigError",
     "CosignError",
@@ -36,8 +37,15 @@ class DomainError(KnockError):
 
 
 class ArchiveError(DomainError):
-    """A source tree cannot be packaged safely (symlink, path escape, size, or
-    missing plugin marker)."""
+    """A source tree cannot be packaged safely (symlink, path escape, collision, or
+    size)."""
+
+
+class ArchiveLayoutError(ArchiveError):
+    """A tree passed every safety check but carries no recognised plugin marker at its
+    root. Layout, not safety — kept as its own subclass (still exit 1 via DomainError in
+    its MRO) so that a future policy escape hatch for the layout check could never also
+    let a symlink, traversal, collision, or size refusal be bypassed."""
 
 
 class PolicyValidationError(DomainError):
