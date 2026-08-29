@@ -33,3 +33,6 @@ docs/architecture/build/
 website/node_modules/
 website/build/
 website/.docusaurus/
+
+# gstack session artefacts (local tooling, never project content)
+.gstack/
