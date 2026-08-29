@@ -160,6 +160,18 @@ def test_git_source_accepts_allowlisted_url_schemes(url: str) -> None:
         # part of a repository — e.g. `-oProxyCommand=...` or `-c core.sshCommand=...`.
         "-a@github.com:example/agent-skill.git",
         "-c@github.com:core.sshCommand=id",
+        # ...and the same applies to the *host* part, which the user-part fix left open:
+        # defense in depth (git 2.14.1+ blocks a strange hostname itself, and ssh rejects
+        # one containing invalid characters) but the validator should not be the layer
+        # that waves it through.
+        "ssh://-oProxyCommand=id/repo",
+        "a@-h:repo",
+        "a@-oProxyCommand:repo",
+        # `\S` matches a NUL byte, so this reached subprocess, where Python raises
+        # ValueError("embedded null byte") — an escape hatch out of the KnockError
+        # hierarchy, i.e. a traceback instead of a clean exit code.
+        "https://h/r\x00",
+        "git@github.com:o/r\x00",
     ],
 )
 def test_git_source_rejects_unsafe_url_schemes(url: str) -> None:

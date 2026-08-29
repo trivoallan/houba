@@ -205,9 +205,9 @@ knock/
 │                verify, lifecycle, retention, purge, deletion_mode, scan/, scan_queue,
 │                transforms/
 ├── ports/       typing.Protocol interfaces — registry, image_builder, attestor, sbom, queue,
-│                usage_oracle, reporter, clock
+│                usage_oracle, reporter, clock, source
 ├── adapters/    concrete I/O — regctl_cli, buildkit_cli, cosign_cli, syft_cli, command_usage,
-│                redis_streams, structlog_reporter, system_clock
+│                redis_streams, structlog_reporter, system_clock, git_cli
 ├── use_cases/   orchestration — loader, reconcile, purge, attach, audit, gc, verify,
 │                scan_worker, registry_session, report
 └── cli/         Typer entry points — reconcile, purge, attach, audit, gc, verify, scan,

@@ -67,6 +67,23 @@ def test_unknown_format_error_is_domain_exit_1() -> None:
     assert exit_code_for(UnknownFormatError("nope")) == 1
 
 
+def test_source_error_is_adapter_error_exit_2() -> None:
+    from knock.errors import SourceError
+
+    assert issubclass(SourceError, AdapterError)
+    assert exit_code_for(SourceError("git exploded")) == 2
+
+
+def test_source_path_error_is_domain_error_exit_1() -> None:
+    # A bad `path:` in a policy is the operator's input, not infrastructure — it must not
+    # share SourceError's exit 2, and must not fall through to 4 ("this is a knock bug").
+    from knock.errors import SourcePathError
+
+    assert issubclass(SourcePathError, DomainError)
+    assert not issubclass(SourcePathError, AdapterError)
+    assert exit_code_for(SourcePathError("no such subdir")) == 1
+
+
 def test_queue_error_is_adapter_error_exit_2():
     assert issubclass(QueueError, AdapterError)
     assert exit_code_for(QueueError("boom")) == 2

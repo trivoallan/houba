@@ -43,8 +43,17 @@ class RegistrySource(_CamelModel):
 # from turning this front door into an arbitrary-command entry point. Only https/ssh
 # URLs and the scp-like `user@host:path` form are accepted; everything else — including
 # `ext::`, `file://`, plain `http://`/`git://`, and the empty string — is rejected.
+#
+# Every user and host part must start with an alphanumeric: a leading `-` makes
+# git (or ssh) read it as an option rather than a hostname. Git self-defends here since
+# 2.14.1, so this is defense in depth — but the validator must not be the layer that waves
+# it through. And the character class is `[^\s\x00]`, not `\S`: `\S` matches a NUL byte,
+# which survives all the way to `subprocess`, where Python raises `ValueError("embedded
+# null byte")` — outside the KnockError hierarchy, so a traceback instead of an exit code.
 _GIT_URL_RE = re.compile(
-    r"^(?:https://\S+|ssh://\S+|[A-Za-z0-9][A-Za-z0-9_.-]*@[A-Za-z0-9_.-]+:\S+)\Z"
+    r"^(?:https://[A-Za-z0-9][^\s\x00]*"
+    r"|ssh://[A-Za-z0-9][^\s\x00]*"
+    r"|[A-Za-z0-9][A-Za-z0-9_.-]*@[A-Za-z0-9][A-Za-z0-9_.-]*:[^\s\x00]+)\Z"
 )
 
 
