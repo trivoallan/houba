@@ -8,6 +8,7 @@ import pytest
 
 from knock.adapters.marketplace_json import (
     DuplicateSkillNameError,
+    MalformedBlobUrlError,
     MalformedDigestError,
     ManifestDropError,
     PublishedSkill,
@@ -90,9 +91,10 @@ def test_a_drop_is_allowed_when_explicitly_confirmed() -> None:
 
 
 def test_allow_drop_without_previous_count_is_rejected() -> None:
-    # allow_drop with no previous_count to allow a drop against is inert protection at the
-    # call site; it must fail loudly rather than being silently accepted.
-    with pytest.raises(ManifestDropError, match="previous_count"):
+    # This is a call-shape mistake, not a policy refusal the operator can confirm away, so
+    # it must not be catchable as ManifestDropError — a plain ValueError falls through
+    # exit_code_for to InternalError (exit 4, "bug"), which is the right classification.
+    with pytest.raises(ValueError, match="previous_count"):
         build_marketplace(
             "internal", "Platform Team", [skill()], previous_count=None, allow_drop=True
         )
@@ -133,9 +135,12 @@ def test_rejects_an_empty_sha256() -> None:
         PublishedSkill(name="probe", blob_url="https://x/blob", sha256="")
 
 
-def test_rejects_a_sha256_of_the_wrong_length() -> None:
+@pytest.mark.parametrize("length", [63, 65, 128])
+def test_rejects_a_sha256_of_the_wrong_length(length: int) -> None:
+    # 65 and 128 (a bare sha512 hex digest — a realistic wrong-algorithm paste) pin the
+    # upper bound: the pattern must be {64}, not {64,}.
     with pytest.raises(MalformedDigestError, match="exactly 64"):
-        PublishedSkill(name="probe", blob_url="https://x/blob", sha256="a" * 63)
+        PublishedSkill(name="probe", blob_url="https://x/blob", sha256="a" * length)
 
 
 def test_rejects_uppercase_hex() -> None:
@@ -168,7 +173,7 @@ def test_a_well_formed_digest_round_trips_unchanged() -> None:
     doc = build_marketplace(
         "internal",
         "Platform Team",
-        [PublishedSkill(name="probe", blob_url="https://x", sha256=digest)],
+        [PublishedSkill(name="probe", blob_url="https://harbor.corp/blob", sha256=digest)],
         previous_count=0,
     )
     assert doc["plugins"][0]["source"]["sha256"] == digest
@@ -180,21 +185,60 @@ def test_published_skill_is_frozen() -> None:
         s.name = "changed"  # type: ignore[misc]
 
 
+# -- blob_url validation at construction -------------------------------------------------
+#
+# The client's manifest validation is a schema safeParse over the whole document: one
+# malformed archive source URL fails validation of the entire manifest, so every skill
+# becomes uninstallable from one bad row — worse than a shrinking catalog, since nothing
+# is left at all. Per the verified client contract, http:// and https://localhost are
+# rejected at manifest validation, not at download.
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://registry.internal/blob",  # wrong scheme
+        "https://localhost/blob",  # rejected host, even over https
+        "https://LOCALHOST/blob",  # host match must not be case-sensitive
+        "",  # empty
+        "../../etc/passwd",  # no scheme at all
+    ],
+)
+def test_rejects_a_malformed_blob_url(bad_url: str) -> None:
+    with pytest.raises(MalformedBlobUrlError):
+        PublishedSkill(name="probe", blob_url=bad_url, sha256="a" * 64)
+
+
+def test_accepts_a_well_formed_https_blob_url() -> None:
+    s = PublishedSkill(
+        name="probe",
+        blob_url="https://harbor.corp/v2/skills/probe/blobs/sha256:" + "a" * 64,
+        sha256="a" * 64,
+    )
+    assert s.blob_url.startswith("https://harbor.corp/")
+
+
 # -- exit codes ---------------------------------------------------------------------------
 #
 # exit_code_for walks the MRO and falls through to InternalError (exit 4, "bug") for
-# anything that matches no branch root. These errors must land on DomainError (exit 1) —
-# a drop-guard trip, a malformed digest, and a duplicate name are policy refusals, not
-# crashes, and an operator's response to each must not be "file a bug".
+# anything that matches no branch root. ManifestDropError and DuplicateSkillNameError are
+# operator-actionable policy refusals (DomainError, exit 1); MalformedDigestError and
+# MalformedBlobUrlError describe registry-sourced garbage, not operator input, so they must
+# land on AdapterError (exit 2) instead — an operator's response to either must not be
+# "go fix your MirrorPolicy", and neither should read as "file a bug".
 
 
 def test_manifest_drop_error_exits_as_a_domain_error() -> None:
     assert exit_code_for(ManifestDropError("x")) == 1
 
 
-def test_malformed_digest_error_exits_as_a_domain_error() -> None:
-    assert exit_code_for(MalformedDigestError("x")) == 1
-
-
 def test_duplicate_skill_name_error_exits_as_a_domain_error() -> None:
     assert exit_code_for(DuplicateSkillNameError("x")) == 1
+
+
+def test_malformed_digest_error_exits_as_an_adapter_error() -> None:
+    assert exit_code_for(MalformedDigestError("x")) == 2
+
+
+def test_malformed_blob_url_error_exits_as_an_adapter_error() -> None:
+    assert exit_code_for(MalformedBlobUrlError("x")) == 2
