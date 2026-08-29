@@ -343,7 +343,8 @@ def _apply_plan(
     sbom_formats: list[str],
     retention_global: Archive | None = None,
 ) -> TargetReport:
-    src_repo = _source_repo(plan.policy)
+    registry_source = _require_registry_source(plan.policy)
+    src_repo = f"{registry_source.registry}/{registry_source.repository}"
     selected = sorted({tag for v in plan.expanded.variants for tag in v.tags})
     source: dict[str, SourceArtifact] = {
         tag: to_source_artifact(registry.inspect(f"{src_repo}:{tag}"), now=now) for tag in selected
@@ -532,7 +533,6 @@ def _apply_plan(
                     # between the copy and the stamp.
                     stamp_ref = f"{plan.dest_repo}@{source[w.src_tag].digest}"
                     publish_as = dest_ref
-                registry_source = _require_registry_source(plan.policy)
                 out_digest = registry.annotate(
                     stamp_ref,
                     build_stamp_annotations(

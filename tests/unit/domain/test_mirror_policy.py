@@ -193,6 +193,7 @@ def test_spec_minimal() -> None:
         }
     )
     assert spec.artifact_type is ArtifactType.image
+    assert isinstance(spec.source, RegistrySource)
     assert spec.source.repository == "library/redis"
     assert len(spec.imports) == 1
 

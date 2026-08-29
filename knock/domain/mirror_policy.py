@@ -38,8 +38,28 @@ class RegistrySource(_CamelModel):
     repository: str = Field(description="Source repository, e.g. `library/redis`.")
 
 
+# Git's remote-helper syntax (`ext::sh -c ...`) executes an arbitrary shell command at
+# clone time, so this is not just a shape check: it is what keeps a hostile policy file
+# from turning this front door into an arbitrary-command entry point. Only https/ssh
+# URLs and the scp-like `user@host:path` form are accepted; everything else — including
+# `ext::`, `file://`, plain `http://`/`git://`, and the empty string — is rejected.
+_GIT_URL_RE = re.compile(r"^(?:https://\S+|ssh://\S+|[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:\S+)$")
+
+
+def _validate_git_url(value: str) -> str:
+    if not _GIT_URL_RE.match(value):
+        raise ValueError(
+            f"invalid git url {value!r}: expected https://, ssh://, or the scp-like "
+            "user@host:path form; git remote helpers (e.g. `ext::`) are not allowed"
+        )
+    return value
+
+
+GitUrl = Annotated[str, AfterValidator(_validate_git_url)]
+
+
 class GitSource(_CamelModel):
-    url: str = Field(description="Upstream git repository URL, e.g. `https://github.com/o/r.git`.")
+    url: GitUrl = Field(description="Upstream git repository URL, e.g. `https://github.com/o/r.git`.")
     ref: str = Field(
         default="HEAD",
         description="Branch, tag, or commit to ingest. Resolved to an immutable commit sha.",
@@ -204,6 +224,16 @@ class ImportProfile(_CamelModel):
     )
 
 
+# Artifact types that only ever come from a container registry (rebuildable, transformable).
+_REGISTRY_ONLY: frozenset[ArtifactType] = frozenset({ArtifactType.image, ArtifactType.helm_chart})
+
+# Artifact types that are content, not rebuildable: no transform steps make sense for them.
+# `generic` accepts either source kind on purpose (ports/source.py is written generic so
+# later artifact classes can also come from git); `skill` is git-only (see
+# `_source_matches_artifact_type` below) but shares the no-transform rule with `generic`.
+_NON_REBUILDABLE: frozenset[ArtifactType] = frozenset({ArtifactType.generic, ArtifactType.skill})
+
+
 class Spec(_CamelModel):
     artifact_type: ArtifactType = Field(
         description="Artifact kind: `image` | `helmChart` | `generic` | `skill`."
@@ -221,8 +251,24 @@ class Spec(_CamelModel):
     )
 
     @model_validator(mode="after")
+    def _source_matches_artifact_type(self) -> Self:
+        # Asymmetric on purpose: image/helmChart are registry-only today, skill is
+        # git-only, and generic deliberately accepts either (see `_NON_REBUILDABLE`
+        # above) so later artifact classes can also be sourced from git.
+        kind = self.artifact_type.value
+        if self.artifact_type in _REGISTRY_ONLY and not isinstance(self.source, RegistrySource):
+            raise PolicyValidationError(
+                f"artifactType '{kind}' requires a registry source, found a git source"
+            )
+        if self.artifact_type is ArtifactType.skill and not isinstance(self.source, GitSource):
+            raise PolicyValidationError(
+                f"artifactType '{kind}' requires a git source, found a registry source"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _non_rebuildable_has_no_transform(self) -> Self:
-        if self.artifact_type not in (ArtifactType.generic, ArtifactType.skill):
+        if self.artifact_type not in _NON_REBUILDABLE:
             return self
         kind = self.artifact_type.value
         if self.defaults is not None and self.defaults.transform:
