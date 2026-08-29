@@ -43,7 +43,9 @@ class RegistrySource(_CamelModel):
 # from turning this front door into an arbitrary-command entry point. Only https/ssh
 # URLs and the scp-like `user@host:path` form are accepted; everything else — including
 # `ext::`, `file://`, plain `http://`/`git://`, and the empty string — is rejected.
-_GIT_URL_RE = re.compile(r"^(?:https://\S+|ssh://\S+|[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+:\S+)$")
+_GIT_URL_RE = re.compile(
+    r"^(?:https://\S+|ssh://\S+|[A-Za-z0-9][A-Za-z0-9_.-]*@[A-Za-z0-9_.-]+:\S+)\Z"
+)
 
 
 def _validate_git_url(value: str) -> str:
@@ -59,7 +61,9 @@ GitUrl = Annotated[str, AfterValidator(_validate_git_url)]
 
 
 class GitSource(_CamelModel):
-    url: GitUrl = Field(description="Upstream git repository URL, e.g. `https://github.com/o/r.git`.")
+    url: GitUrl = Field(
+        description="Upstream git repository URL, e.g. `https://github.com/o/r.git`."
+    )
     ref: str = Field(
         default="HEAD",
         description="Branch, tag, or commit to ingest. Resolved to an immutable commit sha.",
@@ -256,13 +260,16 @@ class Spec(_CamelModel):
         # git-only, and generic deliberately accepts either (see `_NON_REBUILDABLE`
         # above) so later artifact classes can also be sourced from git.
         kind = self.artifact_type.value
+        # Derived from the type, not hard-coded, so this stays correct if a third
+        # member ever joins the Source union.
+        found = type(self.source).__name__
         if self.artifact_type in _REGISTRY_ONLY and not isinstance(self.source, RegistrySource):
             raise PolicyValidationError(
-                f"artifactType '{kind}' requires a registry source, found a git source"
+                f"artifactType '{kind}' requires a registry source, found a {found}"
             )
         if self.artifact_type is ArtifactType.skill and not isinstance(self.source, GitSource):
             raise PolicyValidationError(
-                f"artifactType '{kind}' requires a git source, found a registry source"
+                f"artifactType '{kind}' requires a git source, found a {found}"
             )
         return self
 
@@ -276,8 +283,7 @@ class Spec(_CamelModel):
         for imp in self.imports:
             if imp.transform:
                 raise PolicyValidationError(
-                    f"artifactType '{kind}' must not declare transform steps "
-                    f"(import '{imp.name}')"
+                    f"artifactType '{kind}' must not declare transform steps (import '{imp.name}')"
                 )
         return self
 

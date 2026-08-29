@@ -38,7 +38,13 @@ from knock.domain.lifecycle import (
     build_pending_deletion_annotations,
     parse_pending_mark,
 )
-from knock.domain.mirror_policy import Archive, MirrorPolicy, RegistrySource, TransformStep
+from knock.domain.mirror_policy import (
+    Archive,
+    GitSource,
+    MirrorPolicy,
+    RegistrySource,
+    TransformStep,
+)
 from knock.domain.policy_merge import resolve_imports
 from knock.domain.reconcile import (
     MirrorArtifact,
@@ -53,7 +59,7 @@ from knock.domain.stamp import build_stamp_annotations
 from knock.domain.transforms.base import ResolvedResource, ResolvedStep, ResourceRef
 from knock.domain.transforms.registry import DEFAULT_REGISTRY
 from knock.domain.transforms.render import render, transform_version, validate_transform_steps
-from knock.errors import ConfigError, InternalError, exit_code_for
+from knock.errors import ConfigError, InternalError, UnsupportedSourceError, exit_code_for
 from knock.ports.attestor import AttestorPort
 from knock.ports.image_builder import BuildRequest, ImageBuilderPort
 from knock.ports.registry import ImageInfo, Referrer, RegistryPort
@@ -205,9 +211,13 @@ class _Plan:
 def _require_registry_source(policy: MirrorPolicy) -> RegistrySource:
     """Narrow `policy.spec.source` to a `RegistrySource`.
 
-    This use case only knows how to reconcile registry-sourced artifacts (image /
-    helmChart / generic); git-sourced skills are ingested through a separate path
-    added in later tasks and should never reach here.
+    This use case only reconciles registry-sourced policies: image/helmChart are
+    always registry-sourced, and generic may be either (see mirror_policy.py's
+    asymmetric source/artifactType rule). `reconcile_policies` filters out every
+    git-sourced policy — skill, and any git-sourced generic — before the plan phase
+    even starts, reporting each as skipped (see `_skipped_source_report`), so a git
+    source should never reach this function. If it does, that is a bug in that
+    filter, not a user-input problem: hence `InternalError`.
     """
     s = policy.spec.source
     if not isinstance(s, RegistrySource):
@@ -216,6 +226,33 @@ def _require_registry_source(policy: MirrorPolicy) -> RegistrySource:
             "reconcile only supports registry sources"
         )
     return s
+
+
+def _skipped_source_report(policy: MirrorPolicy, reporter: Reporter) -> PolicyReport:
+    """Report and record a policy whose source this use case does not reconcile yet.
+
+    Both source kinds are legitimate `MirrorPolicy` shapes (see mirror_policy.py); this
+    use case just doesn't know how to mirror a git source. Never raises: the whole
+    point is that one such policy must not abort the run for every other policy in the
+    worklist, and must not vanish from the report silently either — an operator needs
+    to see why it did nothing.
+    """
+    source = policy.spec.source
+    assert isinstance(source, GitSource)  # the only non-RegistrySource member of Source
+    exc = UnsupportedSourceError(
+        f"policy '{policy.metadata.name}' is git-sourced; not handled by reconcile"
+    )
+    info = ErrorInfo(type=type(exc).__name__, message=str(exc), exit_code=exit_code_for(exc))
+    reporter.policy_started(policy.metadata.name, source.url)
+    reporter.policy_failed(policy.metadata.name, info)
+    return PolicyReport(
+        name=policy.metadata.name,
+        source=source.url,
+        status="failed",
+        error=info,
+        totals=Counts(),
+        targets=[],
+    )
 
 
 def _source_repo(policy: MirrorPolicy) -> str:
@@ -945,6 +982,15 @@ def reconcile_policies(
         if owns(p.metadata.name, shard_index=shard_index, shard_count=shard_count)
     ]
 
+    # Registry-sourced only past this point: this use case doesn't yet know how to
+    # mirror a git source (skill is git-only; generic may be either — see
+    # mirror_policy.py's asymmetric source/artifactType rule). Split those out BEFORE
+    # the plan phase touches `_source_repo`, so one git-sourced policy in the worklist
+    # can't abort reconciliation for every other policy — it is reported as skipped
+    # instead (see `_skipped_source_report`), and the rest proceed normally.
+    unsupported_policies = [p for p in policies if not isinstance(p.spec.source, RegistrySource)]
+    policies = [p for p in policies if isinstance(p.spec.source, RegistrySource)]
+
     # --- Plan phase (fail-fast): expand, resolve destinations + transforms, collision-check.
     # Transform resolution (unknown cert/mirror names, unreadable cert files) surfaces all
     # config errors here, before ANY mutation. ---
@@ -997,8 +1043,10 @@ def reconcile_policies(
     detect_alias_collisions(alias_entries)  # fail fast before ANY mutation
 
     # --- Apply phase (isolated per policy). ---
-    reporter.run_started(len(plans_by_policy), mode=mode)
-    policy_reports: list[PolicyReport] = []
+    reporter.run_started(len(plans_by_policy) + len(unsupported_policies), mode=mode)
+    policy_reports: list[PolicyReport] = [
+        _skipped_source_report(p, reporter) for p in unsupported_policies
+    ]
     with ExitStack() as stack:
         executor: ThreadPoolExecutor | None = (
             stack.enter_context(ThreadPoolExecutor(max_workers=max_concurrency))

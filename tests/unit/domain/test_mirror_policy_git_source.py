@@ -94,7 +94,7 @@ def test_image_requires_registry_source() -> None:
     text = GIT_POLICY.replace("artifactType: skill", "artifactType: image")
     with pytest.raises(
         PolicyValidationError,
-        match="artifactType 'image' requires a registry source, found a git source",
+        match="artifactType 'image' requires a registry source, found a GitSource",
     ):
         parse_mirror_policy(text)
 
@@ -103,7 +103,7 @@ def test_helm_chart_requires_registry_source() -> None:
     text = GIT_POLICY.replace("artifactType: skill", "artifactType: helmChart")
     with pytest.raises(
         PolicyValidationError,
-        match="artifactType 'helmChart' requires a registry source, found a git source",
+        match="artifactType 'helmChart' requires a registry source, found a GitSource",
     ):
         parse_mirror_policy(text)
 
@@ -112,7 +112,7 @@ def test_skill_requires_git_source() -> None:
     text = REGISTRY_POLICY.replace("artifactType: image", "artifactType: skill")
     with pytest.raises(
         PolicyValidationError,
-        match="artifactType 'skill' requires a git source, found a registry source",
+        match="artifactType 'skill' requires a git source, found a RegistrySource",
     ):
         parse_mirror_policy(text)
 
@@ -152,6 +152,14 @@ def test_git_source_accepts_allowlisted_url_schemes(url: str) -> None:
         "ext::sh -c 'echo pwned'",
         "http://github.com/example/agent-skill.git",
         "git://github.com/example/agent-skill.git",
+        # A YAML block scalar appends a trailing newline; `$` (unlike `\Z`) matches
+        # right before it, so an unanchored end would let a trailing "\n" slip through.
+        "https://github.com/example/agent-skill.git\n",
+        "git@github.com:example/agent-skill.git\n",
+        # Real git treats a leading `-` in the scp-branch user part as an option, not
+        # part of a repository — e.g. `-oProxyCommand=...` or `-c core.sshCommand=...`.
+        "-a@github.com:example/agent-skill.git",
+        "-c@github.com:core.sshCommand=id",
     ],
 )
 def test_git_source_rejects_unsafe_url_schemes(url: str) -> None:
