@@ -1,6 +1,6 @@
 [project]
 name = "knock-oci"
-version = "0.8.0"
+version = "0.9.0"
 description = "Stamp external OCI images with portable provenance through a hardening policy"
 requires-python = ">=3.13"
 dependencies = [
