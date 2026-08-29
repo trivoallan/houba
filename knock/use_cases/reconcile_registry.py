@@ -61,6 +61,7 @@ from knock.use_cases.report import (
     PolicyReport,
     TargetReport,
     VariantReport,
+    counts_of,
     merge_counts,
     node_status,
 )
@@ -271,23 +272,6 @@ class _AliasWork:
 class _DeleteWork:
     out_tag: str
     reason: str = "dropped-from-selection"
-
-
-def _counts_of(operations: list[Operation]) -> Counts:
-    def n(kind: str) -> int:
-        return sum(1 for op in operations if op.error is None and op.kind == kind)
-
-    return Counts(
-        imported=n("imported"),
-        updated=n("updated"),
-        deleted=n("deleted"),
-        aliased=n("aliased"),
-        skipped=n("skipped"),
-        marked=n("marked"),
-        attested=n("attested"),
-        sbom=n("sbom"),
-        failed=sum(1 for op in operations if op.error is not None),
-    )
 
 
 def _apply_plan(
@@ -854,13 +838,13 @@ def _apply_plan(
                 name=vr.variant,
                 suffix=vplan.suffix,
                 status=node_status(ops),
-                totals=_counts_of(ops),
+                totals=counts_of(ops),
                 operations=ops,
             )
         )
 
     target_ops_all = [op for v in variant_reports for op in v.operations] + lifecycle_ops
-    target_totals = merge_counts([v.totals for v in variant_reports] + [_counts_of(lifecycle_ops)])
+    target_totals = merge_counts([v.totals for v in variant_reports] + [counts_of(lifecycle_ops)])
     return TargetReport(
         dest_repo=plan.dest_repo,
         status=node_status(target_ops_all),

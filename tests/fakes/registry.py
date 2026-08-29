@@ -35,6 +35,7 @@ class FakeRegistryPort:
         self._annotations = annotations or {}
         self._fail_get = fail_get or set()
         self._digests = digests or {}
+        self.listed_tags: list[str] = []
         self.copied: list[tuple[str, str]] = []
         self.annotated: list[tuple[str, dict[str, str]]] = []
         self.deleted: list[str] = []
@@ -52,6 +53,9 @@ class FakeRegistryPort:
         return list(self._repositories.get(registry, []))
 
     def list_tags(self, repo_ref: str) -> list[str]:
+        # Journalled like every mutation here: for the git path this read *is* the
+        # convergence decision, so "was it consulted at all" is an assertable claim.
+        self.listed_tags.append(repo_ref)
         return list(self._tags.get(repo_ref, []))
 
     def inspect(self, image_ref: str) -> ImageInfo:
