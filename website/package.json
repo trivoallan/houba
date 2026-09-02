@@ -21,7 +21,7 @@
     "@docusaurus/module-type-aliases": "^3.10.1",
     "@docusaurus/tsconfig": "^3.10.1",
     "@docusaurus/types": "^3.10.1",
-    "docusaurus-plugin-llms": "^0.5.0",
+    "docusaurus-plugin-llms": "^0.6.0",
     "remark-code-import": "^1.2.0",
     "typescript": "~7.0.0"
   },
