@@ -11,7 +11,7 @@ RUN pip install --no-cache-dir uv && uv build
 FROM python:3.13-alpine AS runtime
 
 # buildctl comes from the official upstream image (static Go binary).
-COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildctl /usr/bin/buildctl
+COPY --from=moby/buildkit:v0.33.0 /usr/bin/buildctl /usr/bin/buildctl
 
 # regctl is knock's registry client (list/copy/annotate/delete/login/registry-set).
 COPY --from=regclient/regctl:v0.11.5 /regctl /usr/bin/regctl
