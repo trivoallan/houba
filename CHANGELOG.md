@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.10.0](https://github.com/trivoallan/knock/compare/v0.9.3...v0.10.0) (2026-09-02)
+
+
+### Features
+
+* a front door for external agent skills ([#263](https://github.com/trivoallan/knock/issues/263)) ([d4f2069](https://github.com/trivoallan/knock/commit/d4f2069f2431624db185b3e6ec3e1072f4e45081))
+* **domain:** a signed scan verdict records the ruleset it was reached under ([#257](https://github.com/trivoallan/knock/issues/257)) ([8f7279c](https://github.com/trivoallan/knock/commit/8f7279c2814fe4c26414de6ef76dfed11a799f1c))
+* reconcile places git-sourced policies ([#265](https://github.com/trivoallan/knock/issues/265)) ([75f5380](https://github.com/trivoallan/knock/commit/75f53808414435edcd24c9a508e2e033293d2f2b))
+
+
+### Bug Fixes
+
+* **adapters:** put_referrer no longer signs empty report digests ([#255](https://github.com/trivoallan/knock/issues/255)) ([2c247ed](https://github.com/trivoallan/knock/commit/2c247edf9a0a077ce5bf1aefa17cff76e347de31))
+* **cli:** the JSON report counts the policies that failed ([#260](https://github.com/trivoallan/knock/issues/260)) ([3e60722](https://github.com/trivoallan/knock/commit/3e60722e26b059ce539e2d8624b07089bd8cedb3))
+* **image:** the runtime image needs git ([#266](https://github.com/trivoallan/knock/issues/266)) ([54eb590](https://github.com/trivoallan/knock/commit/54eb590b5ba80bb488a1ed2181f10dcd1f21822c))
+* **website:** bump dompurify out of its advisory ([#262](https://github.com/trivoallan/knock/issues/262)) ([2ceca85](https://github.com/trivoallan/knock/commit/2ceca857475955a633975a2db53db85f56aaa17a))
+* **website:** bump js-yaml and nanoid out of their advisories ([#261](https://github.com/trivoallan/knock/issues/261)) ([0c01ad4](https://github.com/trivoallan/knock/commit/0c01ad4bee48008846abb5ca719a96318da7a146))
+
+
+### Documentation
+
+* **specs:** external skill intake and skill artifact scanning ([#254](https://github.com/trivoallan/knock/issues/254)) ([4441620](https://github.com/trivoallan/knock/commit/44416201b3dca3ddd86b4712df9b5bfeb0b1ef80))
+
 ## [0.9.3](https://github.com/trivoallan/knock/compare/v0.9.2...v0.9.3) (2026-08-29)
 
 
