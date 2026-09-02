@@ -14,7 +14,7 @@ FROM python:3.13-alpine AS runtime
 COPY --from=moby/buildkit:v0.32.2 /usr/bin/buildctl /usr/bin/buildctl
 
 # regctl is knock's registry client (list/copy/annotate/delete/login/registry-set).
-COPY --from=regclient/regctl:v0.11.5 /regctl /usr/bin/regctl
+COPY --from=regclient/regctl:v0.11.6 /regctl /usr/bin/regctl
 
 # cosign signs the in-toto attestations on the rebuild path (KNOCK_ATTEST_*).
 COPY --from=ghcr.io/sigstore/cosign/cosign:v3.1.3 /ko-app/cosign /usr/bin/cosign
